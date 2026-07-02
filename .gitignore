@@ -9,6 +9,9 @@ build/
 # FastF1 local cache (tens of MB per session, always re-downloadable)
 .fastf1_cache/
 
+# Personal study notes in Spanish — not part of the public repo
+APUNTES.md
+
 # Tooling
 .pytest_cache/
 .ruff_cache/
