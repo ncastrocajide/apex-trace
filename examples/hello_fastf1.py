@@ -31,7 +31,7 @@ def main() -> None:
     session = fastf1.get_session(2024, "Italian Grand Prix", "Q")
     session.load()  # downloads timing + telemetry on first run, then cached
 
-    print(f"\n{session.event['EventName']} {session.event.year} — {session.name}")
+    print(f"\n{session.event['EventName']} {session.event.year} - {session.name}")
     print("-" * 40)
     for driver in DRIVERS:
         fastest = session.laps.pick_drivers(driver).pick_fastest()

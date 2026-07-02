@@ -2,13 +2,13 @@
 
 Source-agnostic race telemetry analysis.
 
-The goal: ingest lap telemetry from any source — real F1 timing data (via
-[FastF1](https://github.com/theOehrly/Fast-F1)), racing sims (Assetto Corsa,
-F1 25) — normalise it onto a canonical distance-based representation, and run
-the same comparison engine on top: cumulative time delta, channel overlays,
-corner-by-corner segmentation and driving metrics.
+The goal: ingest lap telemetry from any source (real F1 timing data via
+[FastF1](https://github.com/theOehrly/Fast-F1), or racing sims like Assetto
+Corsa and F1 25), normalise it onto a canonical distance-based representation,
+and run the same comparison engine on top: cumulative time delta, channel
+overlays, corner-by-corner segmentation and driving metrics.
 
-**Status: M0 — project skeleton and end-to-end data-chain proof.**
+**Status: M0 (project skeleton and end-to-end data-chain proof).**
 
 ## Why source-agnostic
 
@@ -35,12 +35,12 @@ takes a minute or two); subsequent runs are near-instant.
 
 ## Roadmap
 
-- [x] **M0** — skeleton, environment, FastF1 data chain
-- [ ] **M1** — canonical `Lap` (uniform distance grid) + FastF1 loader
-- [ ] **M2** — cumulative time-delta engine + channel overlays
-- [ ] **M3** — corner segmentation + driving metrics
-- [ ] **M4** — second loader (sim telemetry) through the same, untouched engine
-- [ ] **M5** — setup-symptom heuristics (exploratory)
+- [x] **M0**: skeleton, environment, FastF1 data chain
+- [ ] **M1**: canonical `Lap` (uniform distance grid) + FastF1 loader
+- [ ] **M2**: cumulative time-delta engine + channel overlays
+- [ ] **M3**: corner segmentation + driving metrics
+- [ ] **M4**: second loader (sim telemetry) through the same, untouched engine
+- [ ] **M5**: setup-symptom heuristics (exploratory)
 
 ## Honest limits
 
