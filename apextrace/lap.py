@@ -72,7 +72,11 @@ def resample_to_distance(df: pd.DataFrame, step: float = 5.0) -> pd.DataFrame:
     clean = df.loc[keep]
     dist = dist[keep]
 
+    # Uniform grid plus the exact final point: the last sample marks the
+    # lap end (timing-line crossing), so lap_time must be readable there.
     grid = np.arange(0.0, dist[-1], step)
+    if dist[-1] - grid[-1] > 1e-9:
+        grid = np.append(grid, dist[-1])
     out = {"Distance": grid}
 
     for name in clean.columns:

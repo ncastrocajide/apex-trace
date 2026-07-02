@@ -60,7 +60,10 @@ def load_fastf1_lap(
     if pd.notna(picked["PitInTime"]) or pd.notna(picked["PitOutTime"]):
         raise ValueError(f"lap {picked['LapNumber']:.0f} is an in/out lap")
 
-    telemetry = picked.get_car_data().add_distance()
+    # interpolate_edges adds synthetic first/last samples exactly at the
+    # lap start and end, anchoring Time zero to the real line crossing
+    # instead of the first telemetry sample (up to ~0.2 s of phase error).
+    telemetry = picked.get_car_data(interpolate_edges=True).add_distance()
 
     raw = pd.DataFrame(
         {
