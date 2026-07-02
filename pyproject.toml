@@ -1,0 +1,21 @@
+[project]
+name = "apextrace"
+version = "0.1.0"
+description = "Source-agnostic race telemetry analysis: ingest laps from F1 timing data or sim exports and compare them on a common distance axis"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "ncastrocajide" }]
+dependencies = [
+    "fastf1>=3.4",
+    "matplotlib>=3.9",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "scipy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["apextrace"]
