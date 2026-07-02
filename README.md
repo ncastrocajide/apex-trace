@@ -8,7 +8,7 @@ Corsa and F1 25), normalise it onto a canonical distance-based representation,
 and run the same comparison engine on top: cumulative time delta, channel
 overlays, corner-by-corner segmentation and driving metrics.
 
-**Status: M0 (project skeleton and end-to-end data-chain proof).**
+**Status: M1 (canonical Lap and FastF1 loader working end to end).**
 
 ## Why source-agnostic
 
@@ -27,16 +27,27 @@ Python 3.12 · pandas · NumPy · SciPy · matplotlib · FastF1 · managed with
 
 ```bash
 uv sync
-uv run python examples/hello_fastf1.py
+uv run python examples/hello_fastf1.py       # smoke test: lap times
+uv run python examples/plot_speed_trace.py   # one lap through the pipeline
 ```
 
 The first run downloads one F1 session into a local cache (`.fastf1_cache/`,
 takes a minute or two); subsequent runs are near-instant.
 
+Loading a lap in your own code:
+
+```python
+from apextrace.loaders.fastf1_loader import load_fastf1_lap
+
+lap = load_fastf1_lap(2024, "Italian Grand Prix", "Q", "NOR")
+lap.data.head()   # canonical channels on a uniform 5 m distance grid
+lap.lap_time      # seconds
+```
+
 ## Roadmap
 
 - [x] **M0**: skeleton, environment, FastF1 data chain
-- [ ] **M1**: canonical `Lap` (uniform distance grid) + FastF1 loader
+- [x] **M1**: canonical `Lap` (uniform distance grid) + FastF1 loader
 - [ ] **M2**: cumulative time-delta engine + channel overlays
 - [ ] **M3**: corner segmentation + driving metrics
 - [ ] **M4**: second loader (sim telemetry) through the same, untouched engine
