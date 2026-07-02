@@ -2,6 +2,14 @@
 
 Sign convention: delta(s) > 0 means lap_b has lost that much time to
 lap_a by distance s; where the curve rises, lap_b is slower right there.
+
+Two methods exist. "time" subtracts the interpolated Time channels and
+is the default: validated to millisecond accuracy against official F1
+timing across fast, slow and street tracks, in qualifying and race trim
+(see examples/validate_delta.py). "speed" integrates the slowness (1/v)
+difference instead; it accumulates the speed channel's biases and is
+kept as an explicit cross-check, and as a fallback for sources without
+a trustworthy time channel.
 """
 
 import numpy as np
@@ -9,13 +17,6 @@ import pandas as pd
 from scipy.integrate import cumulative_trapezoid
 
 from apextrace.lap import Lap
-
-# "auto" method selection: if more than SLOW_FRACTION_LIMIT of the common
-# grid sits below SLOW_CORNER_KMH, integrating 1/v would amplify speed
-# errors too much and the timing-based method is preferred. First-guess
-# values, to be tuned against real error checks.
-SLOW_CORNER_KMH = 120.0
-SLOW_FRACTION_LIMIT = 0.15
 
 
 def aligned_axes(lap_a: Lap, lap_b: Lap) -> tuple[np.ndarray, np.ndarray]:
@@ -49,31 +50,15 @@ def _on_grid(grid: np.ndarray, dist: np.ndarray, lap: Lap, channel: str) -> np.n
     return np.interp(grid, dist, lap.data[channel].to_numpy(dtype=float))
 
 
-def pick_method(lap_a: Lap, lap_b: Lap) -> str:
-    """Choose the delta method for a pair of laps.
-
-    Decides on the slower of the two speed profiles: the fraction of the
-    lap spent below SLOW_CORNER_KMH says whether 1/v is trustworthy.
-    """
-    grid = common_grid(lap_a, lap_b)
-    dist_a, dist_b = aligned_axes(lap_a, lap_b)
-    v_min = np.minimum(_on_grid(grid, dist_a, lap_a, "Speed"),
-                       _on_grid(grid, dist_b, lap_b, "Speed"))
-    slow_fraction = float(np.mean(v_min < SLOW_CORNER_KMH))
-    return "time" if slow_fraction > SLOW_FRACTION_LIMIT else "speed"
-
-
-def delta_time(lap_a: Lap, lap_b: Lap, method: str = "auto") -> pd.Series:
+def delta_time(lap_a: Lap, lap_b: Lap, method: str = "time") -> pd.Series:
     """Cumulative time delta of lap_b relative to lap_a, vs distance.
 
     method:
-        "time"  - subtract the interpolated Time channels.
+        "time"  - subtract the interpolated Time channels (default).
         "speed" - integrate the slowness (1/v) difference over distance.
-        "auto"  - let pick_method() decide.
+                  Cross-check only: biased where odometer drift is not
+                  uniform along the lap.
     """
-    if method == "auto":
-        method = pick_method(lap_a, lap_b)
-
     grid = common_grid(lap_a, lap_b)
     dist_a, dist_b = aligned_axes(lap_a, lap_b)
 
