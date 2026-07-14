@@ -1,5 +1,7 @@
 # apex-trace
 
+![CI](https://github.com/ncastrocajide/apex-trace/actions/workflows/ci.yml/badge.svg)
+
 Source-agnostic race telemetry analysis.
 
 The goal: ingest lap telemetry from any source (real F1 timing data via
@@ -81,6 +83,7 @@ uv run python examples/check_corners.py      # corner detection + events
 uv run python examples/corner_report.py      # per-corner comparison table
 uv run python examples/track_map.py          # map coloured by speed
 uv run python examples/validate_alignment.py # alignment vs sector times
+uv run pytest                                # synthetic test suite, no network
 ```
 
 The first run downloads one F1 session into a local cache (`.fastf1_cache/`,
@@ -102,7 +105,7 @@ lap.lap_time      # seconds
 - [x] **M1**: canonical `Lap` (uniform distance grid) + FastF1 loader
 - [x] **M2**: cumulative time-delta engine + channel overlays
 - [x] **M3**: corner segmentation, per-corner report, landmark alignment
-- [ ] **M3.5**: automated tests (pytest) + CI
+- [x] **M3.5**: automated tests (pytest) + CI
 - [ ] **M4**: second loader (F1 25 via UDP) through the same, untouched engine
 - [ ] **M5**: unified app: post-session analysis + live delta while driving
 - [ ] **M6**: driving-behaviour heuristics from sim channels (exploratory)
