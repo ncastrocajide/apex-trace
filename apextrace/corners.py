@@ -34,20 +34,24 @@ class Corner:
     names are filled by later passes.
     """
 
-    number: int                          # 1-based, in track order
-    start: float                         # segment start [m]
-    end: float                           # segment end [m]
-    apex: float                          # speed minimum position [m]
-    apex_speed: float                    # [km/h]
-    name: str | None = None              # official designation, e.g. "T4"
-    brake_point: float | None = None     # first brake application [m]
-    lift_point: float | None = None      # throttle drop before the apex [m]
+    number: int  # 1-based, in track order
+    start: float  # segment start [m]
+    end: float  # segment end [m]
+    apex: float  # speed minimum position [m]
+    apex_speed: float  # [km/h]
+    name: str | None = None  # official designation, e.g. "T4"
+    brake_point: float | None = None  # first brake application [m]
+    lift_point: float | None = None  # throttle drop before the apex [m]
     throttle_point: float | None = None  # sustained full throttle again [m]
 
 
-def segment_lap(lap: Lap, min_drop: float = 15.0, min_spacing: float = 50.0,
-                brake_threshold: float = 10.0,
-                throttle_threshold: float = 95.0) -> list[Corner]:
+def segment_lap(
+    lap: Lap,
+    min_drop: float = 15.0,
+    min_spacing: float = 50.0,
+    brake_threshold: float = 10.0,
+    throttle_threshold: float = 95.0,
+) -> list[Corner]:
     """Split a lap into corner segments around its speed minima.
 
     min_drop: minimum prominence of a speed dip [km/h]. A real corner
@@ -64,27 +68,35 @@ def segment_lap(lap: Lap, min_drop: float = 15.0, min_spacing: float = 50.0,
     speed = lap.data["Speed"].to_numpy(dtype=float)
     step = float(dist[1] - dist[0])
 
-    idx, _ = find_peaks(-speed, prominence=min_drop,
-                        distance=max(1, round(min_spacing / step)))
+    idx, _ = find_peaks(
+        -speed, prominence=min_drop, distance=max(1, round(min_spacing / step))
+    )
     if idx.size == 0:
         raise ValueError(
-            "no apexes detected: check the Speed channel or loosen the thresholds")
+            "no apexes detected: check the Speed channel or loosen the thresholds"
+        )
 
     apexes = dist[idx]
     inner = (apexes[:-1] + apexes[1:]) / 2.0
     bounds = np.concatenate(([dist[0]], inner, [dist[-1]]))
 
     corners = [
-        Corner(number=i + 1, start=float(bounds[i]), end=float(bounds[i + 1]),
-               apex=float(dist[j]), apex_speed=float(speed[j]))
+        Corner(
+            number=i + 1,
+            start=float(bounds[i]),
+            end=float(bounds[i + 1]),
+            apex=float(dist[j]),
+            apex_speed=float(speed[j]),
+        )
         for i, j in enumerate(idx)
     ]
     _locate_events(lap, corners, brake_threshold, throttle_threshold)
     return corners
 
 
-def _locate_events(lap: Lap, corners: list[Corner],
-                   brake_threshold: float, throttle_threshold: float) -> None:
+def _locate_events(
+    lap: Lap, corners: list[Corner], brake_threshold: float, throttle_threshold: float
+) -> None:
     """Fill the phase events of each corner: lift, brake, back to full.
 
     Events are threshold crossings, not levels. A condition already met
@@ -101,11 +113,14 @@ def _locate_events(lap: Lap, corners: list[Corner],
         exit_ = (dist >= corner.apex) & (dist <= corner.end)
         corner.lift_point = _first_crossing(dist, throttle < throttle_threshold, entry)
         corner.brake_point = _first_crossing(dist, brake > brake_threshold, entry)
-        corner.throttle_point = _first_crossing(dist, throttle >= throttle_threshold, exit_)
+        corner.throttle_point = _first_crossing(
+            dist, throttle >= throttle_threshold, exit_
+        )
 
 
-def _first_crossing(dist: np.ndarray, condition: np.ndarray,
-                    region: np.ndarray) -> float | None:
+def _first_crossing(
+    dist: np.ndarray, condition: np.ndarray, region: np.ndarray
+) -> float | None:
     """Distance of the first False-to-True switch of condition inside region."""
     idx = np.flatnonzero(region)
     if idx.size < 2:
@@ -117,8 +132,9 @@ def _first_crossing(dist: np.ndarray, condition: np.ndarray,
     return float(dist[idx[switch[0] + 1]])
 
 
-def paired_apexes(corners_a: list[Corner], corners_b: list[Corner],
-                  max_offset: float = 50.0) -> tuple[np.ndarray, np.ndarray] | None:
+def paired_apexes(
+    corners_a: list[Corner], corners_b: list[Corner], max_offset: float = 50.0
+) -> tuple[np.ndarray, np.ndarray] | None:
     """Pair the apexes of two segmentations of the same track, by order.
 
     Fallback for sources without position data; prefer paired_marks
@@ -140,8 +156,9 @@ def paired_apexes(corners_a: list[Corner], corners_b: list[Corner],
     return pos_a, pos_b
 
 
-def paired_marks(lap_a: Lap, lap_b: Lap,
-                 marks: pd.DataFrame) -> tuple[np.ndarray, np.ndarray] | None:
+def paired_marks(
+    lap_a: Lap, lap_b: Lap, marks: pd.DataFrame
+) -> tuple[np.ndarray, np.ndarray] | None:
     """Project the same physical track marks onto both laps' own axes.
 
     Fixed references (official corner marks) are driver independent, so
@@ -160,7 +177,7 @@ def paired_marks(lap_a: Lap, lap_b: Lap,
     kept_a: list[float] = []
     kept_b: list[float] = []
     last_a = last_b = 0.0
-    for da, db in zip(pos_a, pos_b):
+    for da, db in zip(pos_a, pos_b, strict=True):
         if da <= last_a or db <= last_b or da >= end_a or db >= end_b:
             continue
         kept_a.append(da)
@@ -197,8 +214,9 @@ def locate_marks(lap: Lap, marks: pd.DataFrame) -> pd.DataFrame:
     return located
 
 
-def label_corners(corners: list[Corner], marks: pd.DataFrame,
-                  max_offset: float = 150.0) -> None:
+def label_corners(
+    corners: list[Corner], marks: pd.DataFrame, max_offset: float = 150.0
+) -> None:
     """Attach official corner designations to detected corners.
 
     marks: reference table with Distance [m] and Name columns in track
@@ -210,7 +228,7 @@ def label_corners(corners: list[Corner], marks: pd.DataFrame,
     """
     apexes = np.array([c.apex for c in corners])
     collected: dict[int, list[str]] = {}
-    for ref_dist, name in zip(marks["Distance"], marks["Name"]):
+    for ref_dist, name in zip(marks["Distance"], marks["Name"], strict=True):
         i = int(np.argmin(np.abs(apexes - float(ref_dist))))
         if abs(apexes[i] - float(ref_dist)) <= max_offset:
             collected.setdefault(i, []).append(str(name))

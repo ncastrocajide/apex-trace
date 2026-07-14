@@ -89,8 +89,7 @@ def load_fastf1_lap(
         t_car = telemetry["Time"].dt.total_seconds().to_numpy()
         t_pos = pos["Time"].dt.total_seconds().to_numpy()
         for axis in ("X", "Y"):
-            raw[axis] = np.interp(
-                t_car, t_pos, pos[axis].to_numpy(dtype=float)) / 10.0
+            raw[axis] = np.interp(t_car, t_pos, pos[axis].to_numpy(dtype=float)) / 10.0
 
     label = f"{driver} {year} {f1_session.event['Location']} {f1_session.name}"
     return Lap(
@@ -120,8 +119,12 @@ def load_fastf1_corner_marks(year: int, gp: str, session: str) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "Distance": corners["Distance"].to_numpy(dtype=float),
-            "Name": [f"T{int(number)}{letter}" for number, letter
-                     in zip(corners["Number"], corners["Letter"])],
+            "Name": [
+                f"T{int(number)}{letter}"
+                for number, letter in zip(
+                    corners["Number"], corners["Letter"], strict=True
+                )
+            ],
             # Circuit info coordinates come in 1/10 m, like position data.
             "X": corners["X"].to_numpy(dtype=float) / 10.0,
             "Y": corners["Y"].to_numpy(dtype=float) / 10.0,

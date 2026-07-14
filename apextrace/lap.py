@@ -37,9 +37,9 @@ DISCRETE_CHANNELS = ("Gear",)
 class Lap:
     """One lap of telemetry, normalised onto a uniform distance grid."""
 
-    data: pd.DataFrame   # canonical channels on the distance grid
-    label: str           # e.g. "NOR 2024 Monza Q"
-    source: str          # "fastf1" | "assetto_corsa" | "f1_25"
+    data: pd.DataFrame  # canonical channels on the distance grid
+    label: str  # e.g. "NOR 2024 Monza Q"
+    source: str  # "fastf1" | "assetto_corsa" | "f1_25"
     track: str | None = None
     car: str | None = None
 

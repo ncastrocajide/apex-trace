@@ -37,19 +37,22 @@ def main() -> None:
     marks = load_fastf1_corner_marks(2024, "Italian Grand Prix", "Q")
 
     table = corner_report(lap_a, lap_b, marks)
-    print(f"\n{lap_b.label}  vs  {lap_a.label}"
-          f"  ({table.attrs['landmarks']} landmark anchors)")
+    print(
+        f"\n{lap_b.label}  vs  {lap_a.label}"
+        f"  ({table.attrs['landmarks']} landmark anchors)"
+    )
     print(table.to_string(index=False, formatters=FLOAT_FORMATS))
 
     total = table["total_s"].sum()
     final = delta_time(lap_a, lap_b).iloc[-1]
-    print(f"\nsum of per-corner deltas {total:+.3f} s, "
-          f"full-lap delta {final:+.3f} s")
+    print(f"\nsum of per-corner deltas {total:+.3f} s, full-lap delta {final:+.3f} s")
 
     for lap in (lap_a, lap_b):
         m = lap_metrics(lap)
-        print(f"{lap.label}: {m['full_throttle']:.1%} full throttle, "
-              f"{m['braking']:.1%} braking, {m['coasting']:.1%} coasting")
+        print(
+            f"{lap.label}: {m['full_throttle']:.1%} full throttle, "
+            f"{m['braking']:.1%} braking, {m['coasting']:.1%} coasting"
+        )
 
 
 if __name__ == "__main__":

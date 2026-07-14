@@ -18,12 +18,12 @@ from scipy.integrate import cumulative_trapezoid
 
 from apextrace.lap import Lap
 
-
 Landmarks = tuple[np.ndarray, np.ndarray]
 
 
-def _anchors(lap_a: Lap, lap_b: Lap,
-             landmarks: Landmarks | None) -> tuple[np.ndarray, np.ndarray]:
+def _anchors(
+    lap_a: Lap, lap_b: Lap, landmarks: Landmarks | None
+) -> tuple[np.ndarray, np.ndarray]:
     """Matching anchor positions on each lap's own distance axis.
 
     The line crossings (start and end of the lap) are always anchors;
@@ -43,8 +43,9 @@ def _anchors(lap_a: Lap, lap_b: Lap,
     return anchors_a, anchors_b
 
 
-def aligned_axes(lap_a: Lap, lap_b: Lap,
-                 landmarks: Landmarks | None = None) -> tuple[np.ndarray, np.ndarray]:
+def aligned_axes(
+    lap_a: Lap, lap_b: Lap, landmarks: Landmarks | None = None
+) -> tuple[np.ndarray, np.ndarray]:
     """Distance axes of both laps reconciled onto lap_a's axis.
 
     Each lap measures distance by integrating its own sampled speed, so
@@ -62,8 +63,9 @@ def aligned_axes(lap_a: Lap, lap_b: Lap,
     return dist_a, np.interp(dist_b, anchors_b, anchors_a)
 
 
-def common_grid(lap_a: Lap, lap_b: Lap,
-                landmarks: Landmarks | None = None) -> np.ndarray:
+def common_grid(
+    lap_a: Lap, lap_b: Lap, landmarks: Landmarks | None = None
+) -> np.ndarray:
     """Shared distance axis: uniform on lap_a's step, plus the exact end."""
     dist_a, dist_b = aligned_axes(lap_a, lap_b, landmarks)
     step = float(dist_a[1] - dist_a[0])
@@ -79,8 +81,9 @@ def _on_grid(grid: np.ndarray, dist: np.ndarray, lap: Lap, channel: str) -> np.n
     return np.interp(grid, dist, lap.data[channel].to_numpy(dtype=float))
 
 
-def delta_time(lap_a: Lap, lap_b: Lap, method: str = "time",
-               landmarks: Landmarks | None = None) -> pd.Series:
+def delta_time(
+    lap_a: Lap, lap_b: Lap, method: str = "time", landmarks: Landmarks | None = None
+) -> pd.Series:
     """Cumulative time delta of lap_b relative to lap_a, vs distance.
 
     method:
@@ -98,7 +101,9 @@ def delta_time(lap_a: Lap, lap_b: Lap, method: str = "time",
     dist_a, dist_b = aligned_axes(lap_a, lap_b, landmarks)
 
     if method == "time":
-        delta = _on_grid(grid, dist_b, lap_b, "Time") - _on_grid(grid, dist_a, lap_a, "Time")
+        delta = _on_grid(grid, dist_b, lap_b, "Time") - _on_grid(
+            grid, dist_a, lap_a, "Time"
+        )
         delta -= delta[0]
     elif method == "speed":
         # Speed [km/h] -> slowness [s/m]. Time is the integral of slowness
@@ -110,16 +115,20 @@ def delta_time(lap_a: Lap, lap_b: Lap, method: str = "time",
         # own time. Without landmarks there is one span and one k.
         anchors_a, anchors_b = _anchors(lap_a, lap_b, landmarks)
         slopes = np.diff(anchors_a) / np.diff(anchors_b)
-        span = np.clip(np.searchsorted(anchors_a, grid, side="right") - 1,
-                       0, slopes.size - 1)
+        span = np.clip(
+            np.searchsorted(anchors_a, grid, side="right") - 1, 0, slopes.size - 1
+        )
         slowness_a = 3.6 / _on_grid(grid, dist_a, lap_a, "Speed")
         slowness_b = 3.6 / (slopes[span] * _on_grid(grid, dist_b, lap_b, "Speed"))
         delta = cumulative_trapezoid(slowness_b - slowness_a, grid, initial=0.0)
     else:
         raise ValueError(f"unknown method: {method!r}")
 
-    series = pd.Series(delta, index=pd.Index(grid, name="Distance"),
-                       name=f"{lap_b.label} vs {lap_a.label}")
+    series = pd.Series(
+        delta,
+        index=pd.Index(grid, name="Distance"),
+        name=f"{lap_b.label} vs {lap_a.label}",
+    )
     series.attrs["method"] = method
     series.attrs["landmarks"] = 0 if landmarks is None else len(landmarks[0])
     return series

@@ -25,9 +25,12 @@ from apextrace.delta import aligned_axes, delta_time
 from apextrace.lap import Lap
 
 
-def lap_metrics(lap: Lap, brake_threshold: float = 10.0,
-                throttle_threshold: float = 95.0,
-                coast_throttle: float = 5.0) -> dict[str, float]:
+def lap_metrics(
+    lap: Lap,
+    brake_threshold: float = 10.0,
+    throttle_threshold: float = 95.0,
+    coast_throttle: float = 5.0,
+) -> dict[str, float]:
     """Lap-level driving metrics, as fractions of lap distance.
 
     full_throttle: at or above throttle_threshold.
@@ -45,8 +48,9 @@ def lap_metrics(lap: Lap, brake_threshold: float = 10.0,
     }
 
 
-def _coast_metres(lap: Lap, corner: Corner, brake_threshold: float,
-                  coast_throttle: float) -> float:
+def _coast_metres(
+    lap: Lap, corner: Corner, brake_threshold: float, coast_throttle: float
+) -> float:
     """Metres spent coasting inside one corner segment."""
     dist = lap.data["Distance"].to_numpy(dtype=float)
     throttle = lap.data["Throttle"].to_numpy(dtype=float)
@@ -56,10 +60,13 @@ def _coast_metres(lap: Lap, corner: Corner, brake_threshold: float,
     return float(np.sum(coast) * (dist[1] - dist[0]))
 
 
-def corner_report(lap_a: Lap, lap_b: Lap,
-                  marks: pd.DataFrame | None = None,
-                  brake_threshold: float = 10.0,
-                  coast_throttle: float = 5.0) -> pd.DataFrame:
+def corner_report(
+    lap_a: Lap,
+    lap_b: Lap,
+    marks: pd.DataFrame | None = None,
+    brake_threshold: float = 10.0,
+    coast_throttle: float = 5.0,
+) -> pd.DataFrame:
     """Corner-by-corner comparison table of lap_b against lap_a.
 
     One row per corner, labelled from the official marks when given.
@@ -74,7 +81,8 @@ def corner_report(lap_a: Lap, lap_b: Lap,
     if len(corners_a) != len(corners_b):
         raise ValueError(
             f"segmentations disagree: {len(corners_a)} corners on "
-            f"{lap_a.label!r} vs {len(corners_b)} on {lap_b.label!r}")
+            f"{lap_a.label!r} vs {len(corners_b)} on {lap_b.label!r}"
+        )
 
     landmarks = None
     if marks is not None:
@@ -99,22 +107,27 @@ def corner_report(lap_a: Lap, lap_b: Lap,
         return float(np.interp(s, delta.index, delta.to_numpy()))
 
     rows = []
-    for ca, cb in zip(corners_a, corners_b):
-        d_start, d_apex, d_end = (delta_at(ca.start), delta_at(ca.apex),
-                                  delta_at(ca.end))
-        rows.append({
-            "corner": ca.name or f"#{ca.number}",
-            "apex_a_kmh": ca.apex_speed,
-            "apex_b_kmh": cb.apex_speed,
-            "brake_m": onto_a(cb.brake_point) - pos(ca.brake_point),
-            "apex_m": onto_a(cb.apex) - ca.apex,
-            "power_m": onto_a(cb.throttle_point) - pos(ca.throttle_point),
-            "coast_a_m": _coast_metres(lap_a, ca, brake_threshold, coast_throttle),
-            "coast_b_m": _coast_metres(lap_b, cb, brake_threshold, coast_throttle),
-            "entry_s": d_apex - d_start,
-            "exit_s": d_end - d_apex,
-            "total_s": d_end - d_start,
-        })
+    for ca, cb in zip(corners_a, corners_b, strict=True):
+        d_start, d_apex, d_end = (
+            delta_at(ca.start),
+            delta_at(ca.apex),
+            delta_at(ca.end),
+        )
+        rows.append(
+            {
+                "corner": ca.name or f"#{ca.number}",
+                "apex_a_kmh": ca.apex_speed,
+                "apex_b_kmh": cb.apex_speed,
+                "brake_m": onto_a(cb.brake_point) - pos(ca.brake_point),
+                "apex_m": onto_a(cb.apex) - ca.apex,
+                "power_m": onto_a(cb.throttle_point) - pos(ca.throttle_point),
+                "coast_a_m": _coast_metres(lap_a, ca, brake_threshold, coast_throttle),
+                "coast_b_m": _coast_metres(lap_b, cb, brake_threshold, coast_throttle),
+                "entry_s": d_apex - d_start,
+                "exit_s": d_end - d_apex,
+                "total_s": d_end - d_start,
+            }
+        )
 
     table = pd.DataFrame(rows)
     table.attrs["laps"] = (lap_a.label, lap_b.label)

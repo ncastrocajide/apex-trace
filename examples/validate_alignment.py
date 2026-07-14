@@ -30,8 +30,9 @@ CASES = [
 ]
 
 
-def cumulative_sectors(year: int, gp: str, session: str,
-                       driver: str) -> tuple[float, float]:
+def cumulative_sectors(
+    year: int, gp: str, session: str, driver: str
+) -> tuple[float, float]:
     """Official elapsed time at the end of S1 and S2 for the fastest lap."""
     f1s = fastf1.get_session(year, gp, session)
     f1s.load(telemetry=False, weather=False, messages=False)
@@ -50,17 +51,17 @@ def main() -> None:
         lap_a = load_fastf1_lap(year, gp, session, a)
         lap_b = load_fastf1_lap(year, gp, session, b)
         landmarks = paired_marks(
-            lap_a, lap_b, load_fastf1_corner_marks(year, gp, session))
+            lap_a, lap_b, load_fastf1_corner_marks(year, gp, session)
+        )
         d_plain = delta_time(lap_a, lap_b)
         d_marks = delta_time(lap_a, lap_b, landmarks=landmarks)
 
         sec_a = cumulative_sectors(year, gp, session, a)
         sec_b = cumulative_sectors(year, gp, session, b)
-        for n, (t_a, t_b) in enumerate(zip(sec_a, sec_b), start=1):
+        for n, (t_a, t_b) in enumerate(zip(sec_a, sec_b, strict=True), start=1):
             gap = t_b - t_a
             # Where lap_a crossed this sector line, on the common axis.
-            s_star = float(np.interp(t_a, lap_a.data["Time"],
-                                     lap_a.data["Distance"]))
+            s_star = float(np.interp(t_a, lap_a.data["Time"], lap_a.data["Distance"]))
             e_p = float(np.interp(s_star, d_plain.index, d_plain.to_numpy())) - gap
             e_m = float(np.interp(s_star, d_marks.index, d_marks.to_numpy())) - gap
             err_plain.append(e_p)
@@ -69,9 +70,11 @@ def main() -> None:
             print(f"{name:34} {n:3d} {gap:9.3f} {e_p:7.3f} {e_m:8.3f}")
 
     rms = lambda err: float(np.sqrt(np.mean(np.square(err))))  # noqa: E731
-    print(f"\nRMS over {len(err_plain)} sector checks: "
-          f"M2 line-crossing {rms(err_plain):.3f} s, "
-          f"corner-mark landmarks {rms(err_marks):.3f} s")
+    print(
+        f"\nRMS over {len(err_plain)} sector checks: "
+        f"M2 line-crossing {rms(err_plain):.3f} s, "
+        f"corner-mark landmarks {rms(err_marks):.3f} s"
+    )
 
 
 if __name__ == "__main__":

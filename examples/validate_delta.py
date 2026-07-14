@@ -35,8 +35,10 @@ def official_gap(year: int, gp: str, session: str, drv_a: str, drv_b: str) -> fl
 
 def main() -> None:
     fastf1.Cache.enable_cache(CACHE_DIR)
-    print(f"{'case':38} {'official':>9} {'d_time':>8} {'err':>7} "
-          f"{'d_speed':>8} {'err':>7} {'d_lmk':>8} {'err':>7} {'n_lm':>5} {'shift':>6}")
+    print(
+        f"{'case':38} {'official':>9} {'d_time':>8} {'err':>7} "
+        f"{'d_speed':>8} {'err':>7} {'d_lmk':>8} {'err':>7} {'n_lm':>5} {'shift':>6}"
+    )
     for year, gp, session, a, b in CASES:
         lap_a = load_fastf1_lap(year, gp, session, a)
         lap_b = load_fastf1_lap(year, gp, session, b)
@@ -51,14 +53,18 @@ def main() -> None:
         marks = load_fastf1_corner_marks(year, gp, session)
         landmarks = paired_marks(lap_a, lap_b, marks)
         d_l = delta_time(lap_a, lap_b, method="time", landmarks=landmarks)
-        shift = float(np.max(np.abs(
-            d_l.to_numpy() - d_t.reindex(d_l.index).to_numpy())))
+        shift = float(
+            np.max(np.abs(d_l.to_numpy() - d_t.reindex(d_l.index).to_numpy()))
+        )
 
         name = f"{gp[:20]} {year} {session} {b}vs{a}"
-        print(f"{name:38} {ref:9.3f} {d_t.iloc[-1]:8.3f} "
-              f"{d_t.iloc[-1] - ref:7.3f} {d_s.iloc[-1]:8.3f} {d_s.iloc[-1] - ref:7.3f} "
-              f"{d_l.iloc[-1]:8.3f} {d_l.iloc[-1] - ref:7.3f} "
-              f"{d_l.attrs['landmarks']:5d} {shift:6.3f}")
+        print(
+            f"{name:38} {ref:9.3f} {d_t.iloc[-1]:8.3f} "
+            f"{d_t.iloc[-1] - ref:7.3f} {d_s.iloc[-1]:8.3f} "
+            f"{d_s.iloc[-1] - ref:7.3f} "
+            f"{d_l.iloc[-1]:8.3f} {d_l.iloc[-1] - ref:7.3f} "
+            f"{d_l.attrs['landmarks']:5d} {shift:6.3f}"
+        )
 
 
 if __name__ == "__main__":

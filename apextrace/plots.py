@@ -27,9 +27,7 @@ def plot_delta_overlay(
     dist_a, dist_b = aligned_axes(lap_a, lap_b)
 
     n_panels = 1 + len(channels)
-    fig, axes = plt.subplots(
-        n_panels, 1, sharex=True, figsize=(12, 2.2 * n_panels)
-    )
+    fig, axes = plt.subplots(n_panels, 1, sharex=True, figsize=(12, 2.2 * n_panels))
 
     top = axes[0]
     top.plot(delta.index, delta.to_numpy(), color="tab:red", linewidth=1.4)
@@ -40,7 +38,7 @@ def plot_delta_overlay(
         f"(final {delta.iloc[-1]:+.3f} s, method: {delta.attrs['method']})"
     )
 
-    for ax, channel in zip(axes[1:], channels):
+    for ax, channel in zip(axes[1:], channels, strict=True):
         for lap, dist in ((lap_a, dist_a), (lap_b, dist_b)):
             if channel in lap.channels:
                 ax.plot(dist, lap.data[channel], label=lap.label, linewidth=1.0)
@@ -54,8 +52,9 @@ def plot_delta_overlay(
     return fig, axes
 
 
-def plot_track_map(lap: Lap, marks: pd.DataFrame | None = None,
-                   other: Lap | None = None):
+def plot_track_map(
+    lap: Lap, marks: pd.DataFrame | None = None, other: Lap | None = None
+):
     """Driven line coloured by speed, with official corner marks.
 
     Needs the optional X/Y channels (raises if the source lacks them).
@@ -73,8 +72,13 @@ def plot_track_map(lap: Lap, marks: pd.DataFrame | None = None,
     fig, ax = plt.subplots(figsize=(9, 7))
 
     if other is not None:
-        ax.plot(other.data["X"], other.data["Y"], color="grey",
-                linewidth=0.9, label=other.label)
+        ax.plot(
+            other.data["X"],
+            other.data["Y"],
+            color="grey",
+            linewidth=0.9,
+            label=other.label,
+        )
 
     # One coloured segment per grid step: LineCollection maps a value
     # (the mean speed of the step) through the colormap for each one.
@@ -88,15 +92,23 @@ def plot_track_map(lap: Lap, marks: pd.DataFrame | None = None,
     if marks is not None:
         ax.plot(marks["X"], marks["Y"], "o", color="black", markersize=3)
         for _, mark in marks.iterrows():
-            ax.annotate(str(mark["Name"]), (mark["X"], mark["Y"]),
-                        textcoords="offset points", xytext=(6, 6),
-                        fontsize=8, fontweight="bold")
+            ax.annotate(
+                str(mark["Name"]),
+                (mark["X"], mark["Y"]),
+                textcoords="offset points",
+                xytext=(6, 6),
+                fontsize=8,
+                fontweight="bold",
+            )
 
     ax.set_aspect("equal")
     ax.autoscale()
     ax.margins(0.05)
     ax.set_axis_off()
-    ax.set_title(lap.label if other is None
-                 else f"{lap.label} (coloured) vs {other.label} (grey)")
+    ax.set_title(
+        lap.label
+        if other is None
+        else f"{lap.label} (coloured) vs {other.label} (grey)"
+    )
     fig.tight_layout()
     return fig, ax

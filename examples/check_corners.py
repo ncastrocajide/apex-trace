@@ -31,11 +31,13 @@ def main() -> None:
         label_corners(corners, marks)
         print(f"\n{lap.label}: {len(corners)} corners detected")
         for c in corners:
-            print(f"  {c.name or '#' + str(c.number):<9} apex {c.apex:7.1f} m"
-                  f"  {c.apex_speed:5.1f} km/h"
-                  f"  lift {fmt(c.lift_point)}"
-                  f"  brake {fmt(c.brake_point)}"
-                  f"  full {fmt(c.throttle_point)}")
+            print(
+                f"  {c.name or '#' + str(c.number):<9} apex {c.apex:7.1f} m"
+                f"  {c.apex_speed:5.1f} km/h"
+                f"  lift {fmt(c.lift_point)}"
+                f"  brake {fmt(c.brake_point)}"
+                f"  full {fmt(c.throttle_point)}"
+            )
 
 
 if __name__ == "__main__":
