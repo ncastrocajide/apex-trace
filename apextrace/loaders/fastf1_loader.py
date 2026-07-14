@@ -7,6 +7,7 @@ this module. The rest of the package only ever sees canonical Laps.
 from pathlib import Path
 
 import fastf1
+import numpy as np
 import pandas as pd
 
 from apextrace.lap import Lap, resample_to_distance
@@ -80,6 +81,17 @@ def load_fastf1_lap(
     )
     raw["Time"] -= raw["Time"].iloc[0]
 
+    # Track-map coordinates come from a separate positional stream on its
+    # own time base; interpolate them onto the car data timestamps. The
+    # source unit is 1/10 m, the canonical schema wants metres.
+    pos = picked.get_pos_data()
+    if not pos.empty:
+        t_car = telemetry["Time"].dt.total_seconds().to_numpy()
+        t_pos = pos["Time"].dt.total_seconds().to_numpy()
+        for axis in ("X", "Y"):
+            raw[axis] = np.interp(
+                t_car, t_pos, pos[axis].to_numpy(dtype=float)) / 10.0
+
     label = f"{driver} {year} {f1_session.event['Location']} {f1_session.name}"
     return Lap(
         data=resample_to_distance(raw, step=step),
@@ -87,4 +99,31 @@ def load_fastf1_lap(
         source="fastf1",
         track=str(f1_session.event["Location"]),
         car=str(picked["Team"]),
+    )
+
+
+def load_fastf1_corner_marks(year: int, gp: str, session: str) -> pd.DataFrame:
+    """Official corner marks of a session's circuit.
+
+    Returns a DataFrame with Distance [m], Name (official designation,
+    e.g. "T10") and X, Y [m] map coordinates. This is reference data
+    about the real track, not telemetry: useful to label detected
+    corners and to annotate track maps. Cosmetic by design: the engine
+    works without it, so sources with no such data lose nothing.
+    """
+    CACHE_DIR.mkdir(exist_ok=True)
+    fastf1.Cache.enable_cache(CACHE_DIR)
+
+    f1s = fastf1.get_session(year, gp, session)
+    f1s.load(telemetry=False, weather=False, messages=False)
+    corners = f1s.get_circuit_info().corners
+    return pd.DataFrame(
+        {
+            "Distance": corners["Distance"].to_numpy(dtype=float),
+            "Name": [f"T{int(number)}{letter}" for number, letter
+                     in zip(corners["Number"], corners["Letter"])],
+            # Circuit info coordinates come in 1/10 m, like position data.
+            "X": corners["X"].to_numpy(dtype=float) / 10.0,
+            "Y": corners["Y"].to_numpy(dtype=float) / 10.0,
+        }
     )
