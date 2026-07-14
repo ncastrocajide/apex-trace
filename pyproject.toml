@@ -19,3 +19,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["apextrace"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.15.21",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+# E/W pycodestyle, F pyflakes, I import order, B bugbear traps,
+# UP outdated idioms for the targeted Python version.
+select = ["E", "F", "W", "I", "B", "UP"]
