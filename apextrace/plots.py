@@ -4,6 +4,9 @@ Every function returns (fig, axes) so callers can tweak, show or save.
 """
 
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib.collections import LineCollection
 
 from apextrace.delta import aligned_axes, delta_time
 from apextrace.lap import Lap
@@ -49,3 +52,51 @@ def plot_delta_overlay(
         ax.grid(alpha=0.3)
     fig.tight_layout()
     return fig, axes
+
+
+def plot_track_map(lap: Lap, marks: pd.DataFrame | None = None,
+                   other: Lap | None = None):
+    """Driven line coloured by speed, with official corner marks.
+
+    Needs the optional X/Y channels (raises if the source lacks them).
+    marks: table with X, Y and Name columns, e.g. from
+    load_fastf1_corner_marks. A second lap draws underneath as a thin
+    grey line, which makes different driving lines visible on track.
+    """
+    if "X" not in lap.channels or "Y" not in lap.channels:
+        raise ValueError(f"{lap.label!r} has no X/Y channels to draw")
+
+    x = lap.data["X"].to_numpy(dtype=float)
+    y = lap.data["Y"].to_numpy(dtype=float)
+    speed = lap.data["Speed"].to_numpy(dtype=float)
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+
+    if other is not None:
+        ax.plot(other.data["X"], other.data["Y"], color="grey",
+                linewidth=0.9, label=other.label)
+
+    # One coloured segment per grid step: LineCollection maps a value
+    # (the mean speed of the step) through the colormap for each one.
+    points = np.column_stack([x, y])
+    segments = np.stack([points[:-1], points[1:]], axis=1)
+    line = LineCollection(segments, cmap="viridis", linewidths=2.2)
+    line.set_array((speed[:-1] + speed[1:]) / 2.0)
+    ax.add_collection(line)
+    fig.colorbar(line, ax=ax, label=f"Speed [km/h], {lap.label}")
+
+    if marks is not None:
+        ax.plot(marks["X"], marks["Y"], "o", color="black", markersize=3)
+        for _, mark in marks.iterrows():
+            ax.annotate(str(mark["Name"]), (mark["X"], mark["Y"]),
+                        textcoords="offset points", xytext=(6, 6),
+                        fontsize=8, fontweight="bold")
+
+    ax.set_aspect("equal")
+    ax.autoscale()
+    ax.margins(0.05)
+    ax.set_axis_off()
+    ax.set_title(lap.label if other is None
+                 else f"{lap.label} (coloured) vs {other.label} (grey)")
+    fig.tight_layout()
+    return fig, ax
