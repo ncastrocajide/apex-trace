@@ -102,8 +102,11 @@ lap.lap_time      # seconds
 - [x] **M1**: canonical `Lap` (uniform distance grid) + FastF1 loader
 - [x] **M2**: cumulative time-delta engine + channel overlays
 - [x] **M3**: corner segmentation, per-corner report, landmark alignment
-- [ ] **M4**: second loader (sim telemetry) through the same, untouched engine
-- [ ] **M5**: setup-symptom heuristics (exploratory)
+- [ ] **M3.5**: automated tests (pytest) + CI
+- [ ] **M4**: second loader (F1 25 via UDP) through the same, untouched engine
+- [ ] **M5**: unified app: post-session analysis + live delta while driving
+- [ ] **M6**: driving-behaviour heuristics from sim channels (exploratory)
+- [ ] **M7**: third loader (Assetto Corsa) to show the marginal cost curve
 
 ## Honest limits
 
