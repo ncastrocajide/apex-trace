@@ -14,8 +14,14 @@ Canonical DataFrame schema: one row per point on a uniform distance grid.
     Brake     %      0 to 100 (near on/off in F1 timing data)
     Gear      -      integer gear number
     RPM       rpm    optional
-    Steering  deg    optional, absent in F1 timing data
+    Steering  %      optional, -100 to 100, fraction of full lock
     X, Y      m      optional, track map coordinates
+
+Steering is the driver's input as a fraction of full lock, not a rack
+angle in degrees: a fraction is what compares across cars, and a source
+that reports degrees can be converted given the car's lock, whereas the
+reverse needs a lock the telemetry never states. Sims provide it; F1
+timing data has no steering channel at all.
 """
 
 from dataclasses import dataclass
