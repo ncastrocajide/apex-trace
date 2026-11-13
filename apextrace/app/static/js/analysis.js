@@ -20,6 +20,8 @@ const CHANNEL_PANELS = {
   Gear: { title: "Gear", height: 100, stepped: true, digits: 0 },
   RPM: { title: "Engine speed [rpm]", height: 110, digits: 0 },
   Steering: { title: "Steering [% of lock]", height: 120, zero: true },
+  "Long g": { title: "Longitudinal acceleration [g], derived from speed", height: 120, zero: true, digits: 2, minSpan: 1 },
+  "Lat g": { title: "Lateral acceleration [g], derived from position", height: 120, zero: true, digits: 2, minSpan: 1 },
 };
 
 const METRICS = [
@@ -79,6 +81,7 @@ async function refreshLaps() {
 
 function renderLaps() {
   $("laps-hint").hidden = state.laps.length > 0;
+  $("export").hidden = state.laps.length === 0;
   clear($("laps")).append(
     ...state.laps.map((lap) => {
       const isA = lap.id === state.a;

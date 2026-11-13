@@ -26,7 +26,10 @@
     <section id="view-analysis" class="view analysis" role="tabpanel" aria-labelledby="tab-analysis">
       <aside class="sidebar">
         <section class="panel">
-          <h2>Laps</h2>
+          <div class="panel-head">
+            <h2>Laps</h2>
+            <a class="hint" id="export" href="/api/export" download hidden>save as table</a>
+          </div>
           <p class="hint" id="laps-hint">No laps yet. Add a telemetry file, or drive one in the Live view.</p>
           <ul class="laps" id="laps"></ul>
         </section>
@@ -36,7 +39,7 @@
           <label class="drop" id="drop">
             <input type="file" id="file" multiple>
             <span class="drop-title">Choose telemetry files</span>
-            <span class="drop-sub">or drop them here: F1 25 captures, MoTeC CSV exports</span>
+            <span class="drop-sub">or drop them here: F1 25 captures, MoTeC CSV exports, saved lap tables</span>
           </label>
           <label class="lock">Steering lock for MoTeC exports
             <span><input type="number" id="steering-lock" min="1" max="1080" step="1" placeholder="e.g. 240"> deg</span>
@@ -88,7 +91,7 @@
           </section>
           <section class="panel" id="behaviour-panel" hidden>
             <h2>Driving behaviour</h2>
-            <p class="hint">Heuristics read from the pedal and steering traces. Exploratory: they describe the inputs, they do not judge them.</p>
+            <p class="hint">Accelerations derived from speed and position, and, for sources that record them, heuristics read from the pedal and steering traces. Exploratory: they describe what was done, they do not judge it.</p>
             <div class="table-wrap" id="behaviour"></div>
           </section>
         </div>
