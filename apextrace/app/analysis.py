@@ -11,6 +11,7 @@ import math
 
 import numpy as np
 
+from apextrace.behaviour import behaviour_report
 from apextrace.corners import segment_lap
 from apextrace.delta import aligned_axes, common_grid, delta_time
 from apextrace.lap import DISCRETE_CHANNELS, Lap
@@ -24,6 +25,21 @@ OVERLAY_CHANNELS = ("Speed", "Throttle", "Brake", "Gear", "RPM", "Steering")
 # several thousand, so the margin is generous without letting through
 # anything a comparison could mean something for.
 MAX_LENGTH_MISMATCH = 0.03
+
+
+# The behaviour table, column by column: key in the report, heading,
+# unit, and decimals to show. Kept here so the browser renders whatever
+# it is sent and never needs to know what a metric is.
+BEHAVIOUR_COLUMNS = (
+    ("brake_peak", "Brake peak", "%", 0),
+    ("brake_build_m", "Brake build", "m", 0),
+    ("brake_release_m", "Brake release", "m", 0),
+    ("trail_brake_m", "Trail braking", "m", 0),
+    ("throttle_ramp_m", "Throttle ramp", "m", 0),
+    ("throttle_hesitations", "Lifts on exit", "count", 0),
+    ("steering_reversals", "Steering reversals", "count", 0),
+    ("pedal_overlap_m", "Pedal overlap", "m", 0),
+)
 
 
 class NotComparable(ValueError):
@@ -87,6 +103,56 @@ def _records(table) -> list[dict]:
     ]
 
 
+def _has_driver_inputs(lap: Lap) -> bool:
+    """Whether a lap's inputs are rich enough to read behaviour from.
+
+    F1 timing data has a brake that is either off or fully on and no
+    steering; the behaviour metrics would be computed, and would mean
+    nothing. A steering channel, or a brake that spends time between
+    the stops, marks a source that records what the driver did.
+    """
+    if "Steering" in lap.channels:
+        return True
+    brake = lap.data["Brake"].to_numpy(dtype=float)
+    return float(np.mean((brake > 5.0) & (brake < 95.0))) > 0.01
+
+
+def _behaviour(laps: list[tuple[str | None, Lap]]) -> dict | None:
+    """Behaviour table for one lap, or for two laps row against row.
+
+    Each lap is read on its own corners and the rows are paired in
+    order, so two laps only share a table when they segment into the
+    same number of corners, as for the corner report.
+    """
+    if not all(_has_driver_inputs(lap) for _, lap in laps):
+        return None
+    try:
+        reports = [behaviour_report(lap) for _, lap in laps]
+    except ValueError:
+        return None  # no corners detected
+    if len({len(report) for report in reports}) != 1:
+        return None
+
+    columns = [{"key": "corner", "title": "Corner"}]
+    if len(laps) > 1:
+        columns.append({"key": "lap", "title": "Lap"})
+    columns += [
+        {"key": key, "title": title, "unit": unit, "digits": digits}
+        for key, title, unit, digits in BEHAVIOUR_COLUMNS
+    ]
+
+    rows = []
+    for i in range(len(reports[0])):
+        for (name, _), report in zip(laps, reports, strict=True):
+            row = _records(report.iloc[[i]])[0]
+            # Corner names are the first lap's: the rows are paired.
+            row["corner"] = reports[0]["corner"].iloc[i]
+            if name is not None:
+                row["lap"] = name
+            rows.append(row)
+    return {"columns": columns, "rows": rows}
+
+
 def lap_payload(lap: Lap) -> dict:
     """One lap on its own: traces, corners and lap-level metrics."""
     dist = lap.data["Distance"].to_numpy(dtype=float)
@@ -101,6 +167,7 @@ def lap_payload(lap: Lap) -> dict:
         },
         "corners": _segments(lap),
         "metrics": {k: _number(v) for k, v in lap_metrics(lap).items()},
+        "behaviour": _behaviour([(None, lap)]),
         "map": None,
     }
     if "X" in lap.channels and "Y" in lap.channels:
@@ -168,6 +235,7 @@ def compare_payload(lap_a: Lap, lap_b: Lap) -> dict:
         },
         "corners": None,
         "corners_error": None,
+        "behaviour": _behaviour([("A", lap_a), ("B", lap_b)]),
         "map": None,
     }
 

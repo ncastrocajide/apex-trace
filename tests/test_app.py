@@ -133,6 +133,30 @@ def test_payloads_are_strict_json(session, make_lap):
     assert json.loads(json.dumps(lap_payload(flat), allow_nan=False))["corners"] == []
 
 
+def test_behaviour_table_pairs_the_two_laps_corner_by_corner(session):
+    laps, _ = load_f1_25_laps(session[0])
+    behaviour = compare_payload(laps[0], laps[1])["behaviour"]
+
+    assert [c["key"] for c in behaviour["columns"]][:2] == ["corner", "lap"]
+    assert [(r["corner"], r["lap"]) for r in behaviour["rows"]] == [
+        ("#1", "A"),
+        ("#1", "B"),
+        ("#2", "A"),
+        ("#2", "B"),
+        ("#3", "A"),
+        ("#3", "B"),
+    ]
+    assert lap_payload(laps[0])["behaviour"]["rows"][0]["brake_peak"] > 0.0
+
+
+def test_behaviour_is_withheld_from_laps_without_driver_inputs(make_lap, dipped_speed):
+    """An on/off brake and no steering: metrics would be noise, so none."""
+    dist = np.arange(0.0, 2001.0, 5.0)
+    brake = np.where((dist > 850.0) & (dist < 990.0), 100.0, 0.0)
+    timing_like = make_lap(dist, dipped_speed(dist), brake=brake)
+    assert lap_payload(timing_like)["behaviour"] is None
+
+
 def test_laps_of_different_circuits_are_not_comparable(make_lap):
     short = make_lap(np.arange(0.0, 3001.0, 5.0), np.full(601, 200.0), label="short")
     long = make_lap(np.arange(0.0, 5001.0, 5.0), np.full(1001, 200.0), label="long")
