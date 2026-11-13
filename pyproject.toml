@@ -1,7 +1,7 @@
 [project]
 name = "apextrace"
-version = "0.1.0"
-description = "Source-agnostic race telemetry analysis: ingest laps from F1 timing data or sim exports and compare them on a common distance axis"
+version = "0.7.0"
+description = "Source-agnostic race telemetry analysis: laps from F1 timing data, F1 25 and MoTeC exports through one engine, with a live-delta web app"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "ncastrocajide" }]
