@@ -45,7 +45,7 @@ class Lap:
 
     data: pd.DataFrame  # canonical channels on the distance grid
     label: str  # e.g. "NOR 2024 Monza Q"
-    source: str  # "fastf1" | "assetto_corsa" | "f1_25"
+    source: str  # "fastf1" | "f1_25" | "motec_csv" | ...
     track: str | None = None
     car: str | None = None
 
