@@ -15,6 +15,8 @@ import itertools
 import threading
 from dataclasses import dataclass
 
+import pandas as pd
+
 from apextrace.lap import Lap
 
 
@@ -25,6 +27,12 @@ class StoredLap:
     id: str
     lap: Lap
     origin: str  # "live", "upload:<file name>" or "fastf1"
+    # Official corner marks of the lap's circuit, when the source has
+    # them (F1 timing does), and a key naming the event they belong to.
+    # Marks are positions on one event's map, so two laps can only
+    # share them if their keys match.
+    marks: pd.DataFrame | None = None
+    marks_key: str | None = None
 
     def summary(self) -> dict:
         """What a lap list needs to show, without the telemetry."""
@@ -50,9 +58,21 @@ class SessionStore:
         self._ids = itertools.count(1)
         self._lock = threading.Lock()
 
-    def add(self, lap: Lap, origin: str) -> StoredLap:
+    def add(
+        self,
+        lap: Lap,
+        origin: str,
+        marks: pd.DataFrame | None = None,
+        marks_key: str | None = None,
+    ) -> StoredLap:
         with self._lock:
-            stored = StoredLap(id=f"lap{next(self._ids)}", lap=lap, origin=origin)
+            stored = StoredLap(
+                id=f"lap{next(self._ids)}",
+                lap=lap,
+                origin=origin,
+                marks=marks,
+                marks_key=marks_key,
+            )
             self._laps[stored.id] = stored
             return stored
 

@@ -10,9 +10,10 @@ the server is left with nothing to do but route.
 import math
 
 import numpy as np
+import pandas as pd
 
 from apextrace.behaviour import behaviour_report
-from apextrace.corners import segment_lap
+from apextrace.corners import label_corners, locate_marks, paired_marks, segment_lap
 from apextrace.delta import aligned_axes, common_grid, delta_time
 from apextrace.lap import DISCRETE_CHANNELS, Lap
 from apextrace.report import corner_report, lap_metrics
@@ -68,12 +69,22 @@ def _on_grid(grid: np.ndarray, axis: np.ndarray, lap: Lap, channel: str) -> np.n
     return np.interp(grid, axis, values)
 
 
-def _segments(lap: Lap) -> list[dict]:
-    """Corner segments of a lap, or an empty list if none are detected."""
+def _has_position(lap: Lap) -> bool:
+    return "X" in lap.channels and "Y" in lap.channels
+
+
+def _segments(lap: Lap, marks: pd.DataFrame | None = None) -> list[dict]:
+    """Corner segments of a lap, or an empty list if none are detected.
+
+    With official marks, and position channels to project them onto,
+    corners carry their official names instead of running numbers.
+    """
     try:
         corners = segment_lap(lap)
     except ValueError:
         return []
+    if marks is not None and _has_position(lap):
+        label_corners(corners, locate_marks(lap, marks))
     return [
         {
             "label": corner.name or f"#{corner.number}",
@@ -153,7 +164,7 @@ def _behaviour(laps: list[tuple[str | None, Lap]]) -> dict | None:
     return {"columns": columns, "rows": rows}
 
 
-def lap_payload(lap: Lap) -> dict:
+def lap_payload(lap: Lap, marks: pd.DataFrame | None = None) -> dict:
     """One lap on its own: traces, corners and lap-level metrics."""
     dist = lap.data["Distance"].to_numpy(dtype=float)
     payload = {
@@ -165,7 +176,7 @@ def lap_payload(lap: Lap) -> dict:
             for name in OVERLAY_CHANNELS
             if name in lap.channels
         },
-        "corners": _segments(lap),
+        "corners": _segments(lap, marks),
         "metrics": {k: _number(v) for k, v in lap_metrics(lap).items()},
         "behaviour": _behaviour([(None, lap)]),
         "map": None,
@@ -195,19 +206,27 @@ def check_comparable(lap_a: Lap, lap_b: Lap) -> None:
         )
 
 
-def compare_payload(lap_a: Lap, lap_b: Lap) -> dict:
+def compare_payload(lap_a: Lap, lap_b: Lap, marks: pd.DataFrame | None = None) -> dict:
     """lap_b against lap_a: delta, overlays, corner table, metrics, map.
 
     Everything is read on the engine's common grid, with lap_b on the
     reconciled axis, so a cursor at one distance means the same piece of
     track on every trace. Sign conventions are the engine's: positive
     delta means lap_b is behind.
+
+    marks are the official corner marks of the circuit, valid for both
+    laps (same event, same map). When given they name the corners and
+    anchor the axis alignment inside the lap, as in the corner report;
+    the traces and the table are then read on that same alignment.
     """
     check_comparable(lap_a, lap_b)
+    if not (_has_position(lap_a) and _has_position(lap_b)):
+        marks = None
 
-    grid = common_grid(lap_a, lap_b)
-    axis_a, axis_b = aligned_axes(lap_a, lap_b)
-    delta = delta_time(lap_a, lap_b).to_numpy()
+    landmarks = None if marks is None else paired_marks(lap_a, lap_b, marks)
+    grid = common_grid(lap_a, lap_b, landmarks)
+    axis_a, axis_b = aligned_axes(lap_a, lap_b, landmarks)
+    delta = delta_time(lap_a, lap_b, landmarks=landmarks).to_numpy()
 
     shared = [
         name
@@ -228,7 +247,8 @@ def compare_payload(lap_a: Lap, lap_b: Lap) -> dict:
             }
             for name in shared
         },
-        "segments": _segments(lap_a),
+        "segments": _segments(lap_a, marks),
+        "landmarks": 0 if landmarks is None else len(landmarks[0]),
         "metrics": {
             "a": {k: _number(v) for k, v in lap_metrics(lap_a).items()},
             "b": {k: _number(v) for k, v in lap_metrics(lap_b).items()},
@@ -243,7 +263,7 @@ def compare_payload(lap_a: Lap, lap_b: Lap) -> dict:
     # When they do not (a lift that is a corner on one lap only), the
     # rest of the comparison is still valid, so say why and carry on.
     try:
-        payload["corners"] = _records(corner_report(lap_a, lap_b))
+        payload["corners"] = _records(corner_report(lap_a, lap_b, marks))
     except ValueError as error:
         payload["corners_error"] = str(error)
 
