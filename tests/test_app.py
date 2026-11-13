@@ -63,9 +63,14 @@ def capture(tmp_path, session):
     return path
 
 
+# The test client calls the app "testserver"; a browser would use an IP
+# address or localhost, which need no allowance.
+TEST_HOSTS = ("testserver",)
+
+
 @pytest.fixture
 def client():
-    with TestClient(create_app()) as test_client:
+    with TestClient(create_app(allowed_hosts=TEST_HOSTS)) as test_client:
         yield test_client
 
 
@@ -291,6 +296,64 @@ def test_requests_from_another_site_cannot_change_state(client, capture):
     assert allowed.status_code == 200
 
 
+def test_a_foreign_host_name_is_refused(capture):
+    """DNS rebinding: another site's name pointed at this machine."""
+    with TestClient(create_app()) as strict:  # "testserver" not allowed
+        assert strict.get("/api/laps").status_code == 400
+        for host in ("127.0.0.1:8000", "localhost:8000", "[::1]:8000", "192.168.1.20"):
+            assert strict.get("/api/laps", headers={"host": host}).status_code == 200
+        rebound = strict.get("/api/laps", headers={"host": "evil.example:8000"})
+        assert rebound.status_code == 400
+        assert "--allow-host" in rebound.json()["detail"]
+
+
+def circle_lap(make_lap, dipped_speed, floor, label):
+    """A two-corner lap with position channels, on a circle."""
+    dist = np.arange(0.0, 4001.0, 5.0)
+    dips = ((1000.0, floor, 120.0), (2600.0, 150.0, 150.0))
+    lap = make_lap(dist, dipped_speed(dist, dips=dips), label=label)
+    angle = 2.0 * np.pi * dist / 4000.0
+    lap.data["X"] = 4000.0 / (2.0 * np.pi) * np.cos(angle)
+    lap.data["Y"] = 4000.0 / (2.0 * np.pi) * np.sin(angle)
+    return lap
+
+
+def test_official_marks_name_the_corners_and_anchor_the_alignment(
+    make_lap, dipped_speed
+):
+    """As in the M3 corner report, now through the app's payload."""
+    import pandas as pd
+
+    lap_a = circle_lap(make_lap, dipped_speed, 100.0, "a")
+    lap_b = circle_lap(make_lap, dipped_speed, 90.0, "b")
+    radius = 4000.0 / (2.0 * np.pi)
+    at = np.array([1000.0, 2600.0])
+    marks = pd.DataFrame(
+        {
+            "Distance": at,
+            "Name": ["T1", "T4"],
+            "X": radius * np.cos(2.0 * np.pi * at / 4000.0),
+            "Y": radius * np.sin(2.0 * np.pi * at / 4000.0),
+        }
+    )
+
+    named = compare_payload(lap_a, lap_b, marks)
+    assert [s["label"] for s in named["segments"]] == ["T1", "T4"]
+    assert [row["corner"] for row in named["corners"]] == ["T1", "T4"]
+    assert named["landmarks"] == 2
+    assert lap_payload(lap_a, marks)["corners"][0]["label"] == "T1"
+
+    plain = compare_payload(lap_a, lap_b)
+    assert [s["label"] for s in plain["segments"]] == ["#1", "#2"]
+    assert plain["landmarks"] == 0
+    # The line crossings pin the total either way.
+    assert named["final_delta"] == pytest.approx(plain["final_delta"], abs=1e-6)
+
+    # Marks need a map to be projected onto; without one they are ignored.
+    no_map = make_lap(lap_a.data["Distance"], lap_a.data["Speed"])
+    assert compare_payload(no_map, lap_b, marks)["landmarks"] == 0
+
+
 def test_fastf1_route_validates_and_stores(client, make_lap, monkeypatch):
     calls = []
 
@@ -300,7 +363,13 @@ def test_fastf1_route_validates_and_stores(client, make_lap, monkeypatch):
             raise ValueError("XXX has no valid quick lap in this session")
         return make_lap(np.arange(0.0, 1001.0, 5.0), np.full(201, 200.0), label="NOR")
 
+    def fake_marks(year, gp, session):
+        raise RuntimeError("no network in the test suite")
+
     monkeypatch.setattr("apextrace.loaders.fastf1_loader.load_fastf1_lap", fake_loader)
+    monkeypatch.setattr(
+        "apextrace.loaders.fastf1_loader.load_fastf1_corner_marks", fake_marks
+    )
 
     ok = client.post(
         "/api/fastf1",
@@ -435,6 +504,28 @@ def test_snapshot_lets_a_late_client_catch_up(session):
     assert len(snapshot["laps"]) == 1
 
 
+def test_the_automatic_reference_does_not_survive_a_change_of_circuit(session):
+    """A best lap at Monza says nothing about a lap of Monaco."""
+    datagrams, _ = session
+    hub = LiveHub(SessionStore())
+    run_through_hub(hub, datagrams)
+    assert hub.reference is not None and hub.reference.lap.track == "Monza"
+
+    elsewhere, _ = synthetic_session(
+        [profile(), profile()], lap_length=LAP_LENGTH, rate_hz=RATE_HZ, track_id=5
+    )
+    messages = run_through_hub(hub, elsewhere[:200])
+    assert hub.reference is None
+    assert all(m["delta"] is None for m in messages if m["type"] == "sample")
+
+    # A reference the user pinned is their call, and stays.
+    pinned_hub = LiveHub(SessionStore())
+    run_through_hub(pinned_hub, datagrams)
+    pinned_hub.set_reference(pinned_hub.reference, pinned=True)
+    run_through_hub(pinned_hub, elsewhere[:200])
+    assert pinned_hub.reference is not None
+
+
 def test_hub_counts_what_it_cannot_read(session):
     hub = LiveHub(SessionStore())
     hub.handle_datagram(b"not telemetry")
@@ -496,7 +587,7 @@ def test_replay_reaches_the_browser_over_a_websocket(capture, session):
         udp_port=None, replay=capture, replay_speed=400.0, replay_loop=True
     )
 
-    with TestClient(create_app(live=live)) as client:
+    with TestClient(create_app(live=live, allowed_hosts=TEST_HOSTS)) as client:
         with client.websocket_connect("/ws/live") as socket:
             hello = socket.receive_json()
             assert hello["type"] == "hello"

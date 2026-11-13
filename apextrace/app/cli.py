@@ -38,6 +38,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     serve.add_argument("--port", type=int, default=8000, help="port for the app")
     serve.add_argument(
+        "--allow-host",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="extra host name the app may be reached under (IP addresses, "
+        "localhost and this machine's name are always accepted); repeatable",
+    )
+    serve.add_argument(
         "--udp-port",
         type=int,
         default=DEFAULT_PORT,
@@ -128,8 +136,9 @@ def serve(args: argparse.Namespace) -> None:
         else:
             print(f"live view: listening for F1 25 telemetry on UDP {args.udp_port}")
 
+    print(f"apex-trace on http://{args.host}:{args.port}", file=sys.stderr)
     uvicorn.run(
-        create_app(store=store, live=live),
+        create_app(store=store, live=live, allowed_hosts=args.allow_host),
         host=args.host,
         port=args.port,
         log_level="warning",
@@ -139,7 +148,6 @@ def serve(args: argparse.Namespace) -> None:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "serve":
-        print(f"apex-trace on http://{args.host}:{args.port}", file=sys.stderr)
         serve(args)
 
 

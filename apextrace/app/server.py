@@ -7,16 +7,20 @@ owning the lifetime of the live source.
 
 The app has no accounts and no authentication, and is meant to be run
 on the machine it is used from, or on a home network to put the live
-view on a tablet next to the wheel. The one protection it does carry is
-a same-origin check on everything that changes state or opens the live
-socket, so that a web page open in the same browser cannot drive it
-behind the user's back.
+view on a tablet next to the wheel. The protection it does carry is
+against the one way in that a local app has from outside: the user's
+own browser, steered by a page on some other site. Requests must name
+this machine as their host (which defeats DNS rebinding), and anything
+that changes state or opens the live socket must come from the app's
+own pages (which defeats cross-site requests).
 """
 
 import asyncio
 import contextlib
+import ipaddress
+import socket
 import tempfile
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,6 +74,34 @@ class ReferenceRequest(BaseModel):
     lap_id: str | None = None
 
 
+def _host_allowed(host: str | None, extra: frozenset[str]) -> bool:
+    """Whether a Host header names this machine.
+
+    A page on another site can point its own domain name at 127.0.0.1
+    and then talk to a local app as if same-origin (DNS rebinding). The
+    request still carries that foreign name as its Host, so the defence
+    is to accept only names that are this machine's: an IP address
+    literal (which no DNS record can redirect), localhost, the
+    machine's own name, or one the user listed.
+    """
+    if not host:
+        return False
+    if host.startswith("["):  # bracketed IPv6 literal, with or without port
+        name = host[1 : host.find("]")]
+    else:
+        name, _, port = host.rpartition(":")
+        if not name or not port.isdigit():
+            name = host
+    name = name.lower()
+    try:
+        ipaddress.ip_address(name)
+        return True
+    except ValueError:
+        pass
+    machine = socket.gethostname().lower()
+    return name in {"localhost", machine, f"{machine}.local"} or name in extra
+
+
 def _same_origin(origin: str | None, host: str | None) -> bool:
     """True unless a browser says the request came from another site.
 
@@ -83,11 +115,19 @@ def _same_origin(origin: str | None, host: str | None) -> bool:
 
 
 def create_app(
-    store: SessionStore | None = None, live: LiveConfig | None = None
+    store: SessionStore | None = None,
+    live: LiveConfig | None = None,
+    allowed_hosts: Iterable[str] = (),
 ) -> FastAPI:
-    """Build the app. live=None serves analysis only, with no stream."""
+    """Build the app.
+
+    live=None serves analysis only, with no stream. allowed_hosts adds
+    host names the app may be reached under, beyond IP addresses,
+    localhost and the machine's own name.
+    """
     store = store if store is not None else SessionStore()
     hub = LiveHub(store)
+    extra_hosts = frozenset(name.lower() for name in allowed_hosts)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -122,6 +162,14 @@ def create_app(
 
     @app.middleware("http")
     async def guard_origin(request: Request, call_next):
+        if not _host_allowed(request.headers.get("host"), extra_hosts):
+            return JSONResponse(
+                {
+                    "detail": "unrecognised host name; reach the app by IP "
+                    "address, or start it with --allow-host NAME"
+                },
+                status_code=400,
+            )
         if request.method not in ("GET", "HEAD", "OPTIONS") and not _same_origin(
             request.headers.get("origin"), request.headers.get("host")
         ):
@@ -144,7 +192,8 @@ def create_app(
 
     @app.get("/api/laps/{lap_id}")
     def get_lap(lap_id: str) -> dict:
-        return lap_payload(_lap_or_404(lap_id).lap)
+        stored = _lap_or_404(lap_id)
+        return lap_payload(stored.lap, stored.marks)
 
     @app.delete("/api/laps/{lap_id}")
     async def delete_lap(lap_id: str) -> dict:
@@ -162,8 +211,14 @@ def create_app(
     def compare(a: str, b: str) -> dict:
         if a == b:
             raise HTTPException(400, "pick two different laps to compare")
+        lap_a, lap_b = _lap_or_404(a), _lap_or_404(b)
+        # Corner marks are positions on one event's map: usable only
+        # when both laps come from that same event.
+        shared = lap_a.marks_key is not None and lap_a.marks_key == lap_b.marks_key
         try:
-            return compare_payload(_lap_or_404(a).lap, _lap_or_404(b).lap)
+            return compare_payload(
+                lap_a.lap, lap_b.lap, lap_a.marks if shared else None
+            )
         except NotComparable as error:
             raise HTTPException(400, str(error)) from None
 
@@ -212,10 +267,10 @@ def create_app(
         """Download one lap from official F1 timing. Needs the network."""
         # Imported here: FastF1 is slow to import and only this endpoint
         # needs it, so the app starts fast and works offline otherwise.
-        from apextrace.loaders.fastf1_loader import load_fastf1_lap
+        from apextrace.loaders import fastf1_loader
 
         try:
-            lap = load_fastf1_lap(
+            lap = fastf1_loader.load_fastf1_lap(
                 request.year,
                 request.gp,
                 request.session,
@@ -226,7 +281,20 @@ def create_app(
             raise HTTPException(
                 400, f"could not load that lap from F1 timing: {error}"
             ) from None
-        return store.add(lap, origin="fastf1").summary()
+        # Official corner marks are a bonus: they name the corners and
+        # sharpen the alignment, and nothing breaks without them.
+        marks = None
+        with contextlib.suppress(Exception):
+            marks = fastf1_loader.load_fastf1_corner_marks(
+                request.year, request.gp, request.session
+            )
+        key = f"{request.year}|{request.gp.lower()}|{request.session.lower()}"
+        return store.add(
+            lap,
+            origin="fastf1",
+            marks=marks,
+            marks_key=key if marks is not None else None,
+        ).summary()
 
     # --- live ---------------------------------------------------------
 
@@ -245,22 +313,25 @@ def create_app(
         return {"reference": None if reference is None else reference.summary()}
 
     @app.websocket("/ws/live")
-    async def live_socket(socket: WebSocket) -> None:
-        if not _same_origin(socket.headers.get("origin"), socket.headers.get("host")):
-            await socket.close(code=1008)
+    async def live_socket(websocket: WebSocket) -> None:
+        host = websocket.headers.get("host")
+        if not _host_allowed(host, extra_hosts) or not _same_origin(
+            websocket.headers.get("origin"), host
+        ):
+            await websocket.close(code=1008)
             return
-        await socket.accept()
+        await websocket.accept()
         queue = hub.subscribe()
 
         async def send() -> None:
-            await socket.send_json(hub.snapshot())
+            await websocket.send_json(hub.snapshot())
             while True:
-                await socket.send_json(await queue.get())
+                await websocket.send_json(await queue.get())
 
         async def receive() -> None:
             # Clients send nothing; this only exists to notice them go.
             while True:
-                await socket.receive_text()
+                await websocket.receive_text()
 
         tasks = [asyncio.create_task(send()), asyncio.create_task(receive())]
         try:

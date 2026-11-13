@@ -190,6 +190,7 @@ tfoot td { font-family: var(--mono); font-weight: 600; border-top: 1px solid var
 .drop-sub { font-size: 12px; color: var(--muted); }
 
 .lock { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+.lock span { white-space: nowrap; }
 .lock input { width: 84px; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
 .fastf1 { margin-top: 12px; font-size: 13px; }
 .fastf1 summary { cursor: pointer; color: var(--muted); }
@@ -281,7 +282,7 @@ button:disabled { opacity: 0.5; cursor: progress; }
 
 .pedals { display: flex; gap: 10px; height: 150px; }
 .pedal { position: relative; width: 22px; border-radius: 6px; background: var(--surface-2); overflow: hidden; display: flex; align-items: flex-end; justify-content: center; }
-.pedal span { position: relative; font: 600 10px var(--mono); color: var(--text); padding-bottom: 4px; mix-blend-mode: difference; }
+.pedal span { position: relative; font: 600 10px var(--mono); color: var(--text); padding-bottom: 4px; }
 .pedal-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; }
 .pedal-fill.throttle { background: var(--gain); }
 .pedal-fill.brake { background: var(--loss); }
