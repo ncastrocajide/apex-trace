@@ -123,6 +123,15 @@ class LiveHub:
 
         if lap is not None:
             self._on_lap(lap)
+        if (
+            not self._pinned
+            and self._reference is not None
+            and self._reference.lap.track != self._assembler.track
+        ):
+            # The session moved to another circuit. The automatic
+            # reference belongs to the old one; a delta against it
+            # would be a number about nothing.
+            self._apply_reference(self._best_live_lap())
         for skipped in self._assembler.skipped[self._skipped_reported :]:
             self._broadcast(
                 {
