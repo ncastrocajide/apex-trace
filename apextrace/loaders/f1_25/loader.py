@@ -34,7 +34,7 @@ own track length is only a fallback for when that difference is
 unusable.
 """
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +42,7 @@ import numpy as np
 import pandas as pd
 
 from apextrace.lap import Lap, resample_to_distance
+from apextrace.live import LiveSample
 from apextrace.loaders.f1_25 import packets
 from apextrace.loaders.f1_25.capture import replay
 from apextrace.loaders.f1_25.packets import (
@@ -98,6 +99,7 @@ class LapAssembler:
         step: float = 5.0,
         keep_invalid: bool = False,
         keep_pit_laps: bool = False,
+        on_sample: Callable[[LiveSample], None] | None = None,
     ) -> None:
         """
         step:
@@ -110,10 +112,15 @@ class LapAssembler:
             Keep in and out laps. Off by default, matching the FastF1
             loader: a lap through the pits has no comparable distance
             axis.
+        on_sample:
+            Called with every reassembled frame as a LiveSample, for
+            consumers that cannot wait for the lap to finish (the live
+            delta). Finished Laps are still returned by feed.
         """
         self.step = step
         self.keep_invalid = keep_invalid
         self.keep_pit_laps = keep_pit_laps
+        self.on_sample = on_sample
         self.skipped: list[SkippedLap] = []
 
         self._session: SessionInfo | None = None
@@ -185,6 +192,9 @@ class LapAssembler:
 
     def _add_sample(self, sample: _Sample) -> Lap | None:
         """Append a sample to the current lap, cutting at a lap change."""
+        if self.on_sample is not None:
+            self.on_sample(_live_sample(sample))
+
         if self._lap_number is None:
             self._lap_number = sample.lap.lap_number
 
@@ -308,6 +318,28 @@ class LapAssembler:
         if self._session is not None and self._session.track_length > 0.0:
             return self._session.track_length
         return None
+
+
+def _live_sample(sample: _Sample) -> LiveSample:
+    """The instant a live consumer sees, in canonical units."""
+    motion = sample.motion
+    return LiveSample(
+        lap_number=sample.lap.lap_number,
+        distance=sample.lap.lap_distance,
+        time=sample.lap.current_lap_time,
+        speed=sample.telemetry.speed,
+        throttle=sample.telemetry.throttle * 100.0,
+        brake=sample.telemetry.brake * 100.0,
+        gear=sample.telemetry.gear,
+        steering=sample.telemetry.steer * 100.0,
+        x=None if motion is None else motion.world_x,
+        y=None if motion is None else motion.world_z,
+        valid=(
+            not sample.lap.invalid
+            and sample.lap.pit_status == 0
+            and sample.lap.driver_status in packets.DRIVER_RACING
+        ),
+    )
 
 
 def _row(sample: _Sample) -> dict[str, float]:
