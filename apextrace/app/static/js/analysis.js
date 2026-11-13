@@ -156,10 +156,10 @@ async function uploadFiles(files) {
   for (const file of files) {
     say(`reading ${file.name}…`);
     try {
-      const result = await api.upload(file);
+      const result = await api.upload(file, $("steering-lock").value);
       added.push(...result.added);
-      const skipped = result.skipped.length ? `, ${result.skipped.length} skipped (${result.skipped.join("; ")})` : "";
-      lines.push(`${file.name}: ${result.added.length} laps${skipped}`);
+      const notes = result.notes.length ? ` (${result.notes.join("; ")})` : "";
+      lines.push(`${file.name}: ${result.added.length} laps${notes}`);
     } catch (error) {
       failed = true;
       lines.push(`${file.name}: ${error.message}`);

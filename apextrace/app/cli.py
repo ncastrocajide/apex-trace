@@ -69,6 +69,14 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--no-live", action="store_true", help="analysis only, no live stream"
     )
+    serve.add_argument(
+        "--steering-lock",
+        type=float,
+        default=None,
+        metavar="DEG",
+        help="steering wheel angle at full lock, for MoTeC exports that log "
+        "steering in degrees (files given on the command line)",
+    )
     return parser
 
 
@@ -76,7 +84,7 @@ def serve(args: argparse.Namespace) -> None:
     try:
         import uvicorn
 
-        from apextrace.app.ingest import UnsupportedFile, load_file
+        from apextrace.app.ingest import LoadOptions, UnsupportedFile, load_file
         from apextrace.app.server import LiveConfig, create_app
         from apextrace.app.store import SessionStore
     except ImportError as error:
@@ -95,14 +103,16 @@ def serve(args: argparse.Namespace) -> None:
     store = SessionStore()
     for path in args.files:
         try:
-            kind, laps, notes = load_file(path)
+            kind, laps, notes = load_file(
+                path, LoadOptions(steering_lock=args.steering_lock)
+            )
         except (OSError, UnsupportedFile, ValueError) as error:
             raise SystemExit(f"{path}: {error}") from None
         for lap in laps:
             store.add(lap, origin=f"upload:{path.name}")
         print(f"{path}: {kind}, {len(laps)} laps")
         for note in notes:
-            print(f"  skipped {note}")
+            print(f"  note: {note}")
 
     live = None
     if not args.no_live:

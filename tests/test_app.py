@@ -181,6 +181,36 @@ def test_upload_adds_every_lap_of_a_capture(client, capture):
     ]
 
 
+def test_upload_reads_a_motec_export_and_passes_the_steering_lock(client, tmp_path):
+    """A third format reaches the app by one line in the ingest table."""
+    from support_motec import Outing, write_motec_csv
+
+    outing = Outing()
+    path = write_motec_csv(tmp_path / "outing.csv", outing.columns(), outing.beacons)
+
+    with path.open("rb") as src:
+        plain = client.post("/api/upload", files={"file": ("outing.csv", src)}).json()
+    assert plain["format"] == "MoTeC CSV export"
+    assert len(plain["added"]) == 2
+    assert "Steering" not in plain["added"][0]["channels"]
+    assert any("steering_lock" in note for note in plain["notes"])
+
+    with path.open("rb") as src:
+        with_lock = client.post(
+            "/api/upload",
+            files={"file": ("outing.csv", src)},
+            data={"steering_lock": "180"},
+        ).json()
+    assert "Steering" in with_lock["added"][0]["channels"]
+    assert with_lock["notes"] == []
+
+    # Laps from an export go through the same comparison as any other,
+    # and with steering present they carry a behaviour table.
+    ids = [lap["id"] for lap in with_lock["added"]]
+    compared = client.get("/api/compare", params={"a": ids[0], "b": ids[1]}).json()
+    assert compared["behaviour"] is not None
+
+
 def test_upload_reports_skipped_laps(client, tmp_path):
     datagrams, _ = synthetic_session(
         [profile(), profile(), profile()],
@@ -193,7 +223,7 @@ def test_upload_reports_skipped_laps(client, tmp_path):
 
     body = upload(client, path).json()
     assert len(body["added"]) == 1
-    assert len(body["skipped"]) == 1 and "invalidated" in body["skipped"][0]
+    assert len(body["notes"]) == 1 and "invalidated" in body["notes"][0]
 
 
 def test_upload_of_an_unknown_format_is_refused(client, tmp_path):
@@ -202,6 +232,7 @@ def test_upload_of_an_unknown_format_is_refused(client, tmp_path):
     response = upload(client, path, name="holiday.jpg")
     assert response.status_code == 415
     assert "F1 25 capture" in response.json()["detail"]
+    assert "MoTeC CSV export" in response.json()["detail"]
 
 
 def test_upload_file_name_is_only_a_label(client, capture):

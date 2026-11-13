@@ -80,9 +80,10 @@ export const api = {
   remove: (id) => request(`/api/laps/${encodeURIComponent(id)}`, { method: "DELETE" }),
   compare: (a, b) =>
     request(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`),
-  upload: (file) => {
+  upload: (file, steeringLock) => {
     const body = new FormData();
     body.append("file", file);
+    if (steeringLock) body.append("steering_lock", steeringLock);
     return request("/api/upload", { method: "POST", body });
   },
   fastf1: (params) =>

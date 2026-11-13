@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, WebSocket
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -31,7 +31,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from apextrace.app.analysis import NotComparable, compare_payload, lap_payload
 from apextrace.app.hub import LiveHub
-from apextrace.app.ingest import UnsupportedFile, load_file
+from apextrace.app.ingest import LoadOptions, UnsupportedFile, load_file
 from apextrace.app.store import SessionStore, StoredLap
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -170,12 +170,16 @@ def create_app(
     # --- loading ------------------------------------------------------
 
     @app.post("/api/upload")
-    def upload(file: UploadFile) -> dict:
+    def upload(
+        file: UploadFile,
+        steering_lock: float | None = Form(default=None, gt=0.0, le=1080.0),
+    ) -> dict:
         """Load every lap from an uploaded telemetry file.
 
         The upload is spooled to a temporary file and handed to the
         loaders by path, the same way a file on disk would be. The
-        client's file name is only ever used as a label.
+        client's file name is only ever used as a label. steering_lock
+        [deg] is for exports that log steering as a wheel angle.
         """
         name = Path(file.filename or "upload").name
         with tempfile.TemporaryDirectory() as tmp:
@@ -188,7 +192,9 @@ def create_app(
                         raise HTTPException(413, "file is too large")
                     out.write(chunk)
             try:
-                kind, laps, notes = load_file(path)
+                kind, laps, notes = load_file(
+                    path, LoadOptions(steering_lock=steering_lock)
+                )
             except UnsupportedFile as error:
                 raise HTTPException(415, str(error)) from None
             except ValueError as error:
@@ -198,7 +204,7 @@ def create_app(
         return {
             "format": kind,
             "added": [stored.summary() for stored in added],
-            "skipped": notes,
+            "notes": notes,
         }
 
     @app.post("/api/fastf1")
