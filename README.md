@@ -75,7 +75,7 @@ first as possible.
 | Source | Kind of source | Loader | Engine lines changed |
 | --- | --- | ---: | ---: |
 | F1 timing data (FastF1) | archive behind an API | 132 lines | (written alongside) |
-| F1 25 | live binary UDP stream | 919 lines | 0 |
+| F1 25 | live binary UDP stream | 965 lines | 0 |
 | MoTeC i2 CSV (Assetto Corsa, real loggers) | text file exported by hand | 424 lines | 0 |
 
 The loaders did not get cheaper in a straight line, and the table is
@@ -120,6 +120,20 @@ corner apex_a_kmh apex_b_kmh brake_m  apex_m power_m coast_a_m coast_b_m entry_s
 The delta engine recovers the lap time difference exactly and puts all
 of it in corner #2, the only place the two laps differ.
 
+Laps can be kept two ways. The raw recording is the record of a session:
+it replays as if live and can always be decoded again. Once decoded,
+laps from any source save to one plain table (CSV, the same file
+whichever loader made them) that reloads without decoding and opens in
+a spreadsheet:
+
+```bash
+uv run apextrace record monza.f1cap                  # raw UDP, while driving
+uv run apextrace extract monza.f1cap -o monza.csv    # canonical laps, as a table
+```
+
+`examples/cross_source.py` puts a sim lap against the real pole lap of
+the same circuit, the comparison the whole design exists to allow.
+
 What the sims add that F1 timing data does not have: an analogue brake
 trace instead of a near on/off signal, and a steering channel. What
 they lack: official corner marks, which are reference data about a real
@@ -139,16 +153,21 @@ uv run apextrace serve --replay monza.f1cap   # relive a recorded session
 uv run apextrace serve --no-live a.f1cap b.csv --steering-lock 240
 ```
 
+`serve` is the only command that needs the app extra; `record` and
+`extract` run on the engine alone.
+
 ![Analysis view: delta, channel overlays, corner segments](docs/app_analysis.png)
 
 **Analysis.** Laps from any source sit in one list: drop in F1 25
-captures or MoTeC exports, or download a lap from F1 timing. Pick a
+captures, MoTeC exports or saved lap tables, or download a lap from F1
+timing. Pick a
 reference lap A and a lap B and the engine's results are laid out on a
 shared distance axis: delta, channel overlays with a synced cursor and
 zoom, a track map coloured by where the time goes, the corner table,
-and the behaviour table. Laps of different circuits are refused, and
-laps from different sources are compared with a note that the result
-is qualitative.
+and the behaviour table. The session's laps save as one table from the
+lap list. Laps of different circuits are refused, and laps from
+different sources are compared with a note that the result is
+qualitative.
 
 ![Live view: delta to reference, trend, predicted lap](docs/app_live.png)
 
@@ -202,6 +221,39 @@ depend on how a source normalises its steering channel. The table above
 is from the synthetic session, whose pedal traces are fillers; it shows
 the output, not driving.
 
+### Accelerations without an accelerometer
+
+A car's planar motion is described by how fast it goes and where, so
+the accelerations are derived from channels every lap already has:
+longitudinal as the rate of change of speed, lateral as speed squared
+times the curvature of the driven line (`gforce.py`). That makes them
+available for any source with a position channel, F1 timing data
+included, on a single definition, and leaves the canonical schema
+alone.
+
+```
+corner  brake_g  accel_g  lat_g  combined_g  trail_g_m  power_g_m
+    #1     2.78     2.80   0.99        2.85     100.00      95.00
+    #2     1.81     1.72   0.99        1.90     140.00     140.00
+    #3     3.11     3.15   0.99        3.18      95.00      95.00
+```
+
+`trail_g_m` and `power_g_m` are the vehicle-dynamics reading of a
+corner's phases: metres spent slowing and turning at once, and metres
+spent turning and accelerating at once. The first is trail braking seen
+from the car rather than from the pedal, which is the only way to see
+it on F1 timing data, where the brake channel is on/off and there is no
+steering. `examples/gg_diagram.py` plots the two accelerations against
+each other.
+
+These are estimates, and the cost is differentiation: speed arrives in
+whole km/h and position is noisy, and a derivative amplifies both. The
+derivatives are taken with a Savitzky-Golay filter whose two windows
+(50 m for speed, 100 m for position) are parameters in metres. A window
+wider than a corner flattens its peak, so a figure quoted from here
+should say which windows it was computed with. The table is again from
+the synthetic session, which is driven round a circle.
+
 ## Stack
 
 Python 3.12+ · pandas · NumPy · SciPy · matplotlib · FastF1 · managed with
@@ -223,6 +275,7 @@ uv run python examples/track_map.py          # map coloured by speed
 uv run python examples/validate_alignment.py # alignment vs sector times
 uv run python examples/f1_25_demo.py         # F1 25 path, no game needed
 uv run python examples/behaviour_report.py   # input heuristics, same session
+uv run python examples/gg_diagram.py         # derived accelerations, g-g plot
 uv run pytest                                # synthetic test suite, no network
 ```
 
@@ -234,6 +287,7 @@ near-instant. With the game or an export to hand:
 uv run python examples/f1_25_record.py monza.f1cap     # while driving F1 25
 uv run python examples/f1_25_analyse.py monza.f1cap    # afterwards
 uv run python examples/motec_compare.py outing.csv --steering-lock 240
+uv run python examples/cross_source.py monza.f1cap     # sim lap vs real pole
 ```
 
 To see the app with no game: `uv run python examples/f1_25_demo.py
@@ -244,15 +298,20 @@ Loading laps in your own code, one line per source, same `Lap` out:
 
 ```python
 from apextrace.loaders.fastf1_loader import load_fastf1_lap
-from apextrace.loaders.f1_25 import load_f1_25_capture
+from apextrace.loaders.f1_25 import load_f1_25_capture, load_f1_25_lap
 from apextrace.loaders.motec_csv import load_motec_csv
+from apextrace.storage import load_laps, save_laps
 
 lap = load_fastf1_lap(2024, "Italian Grand Prix", "Q", "NOR")
-laps, skipped = load_f1_25_capture("monza.f1cap")        # skipped says why
+lap = load_f1_25_lap("monza.f1cap")                      # fastest valid lap
+laps, skipped = load_f1_25_capture("monza.f1cap")        # all, skipped says why
 laps, notes = load_motec_csv("outing.csv", steering_lock=240)
 
 lap.data.head()   # canonical channels on a uniform 5 m distance grid
 lap.lap_time      # seconds
+
+save_laps(laps, "session.csv")    # canonical laps as a table
+laps = load_laps("session.csv")   # and back, bit for bit
 ```
 
 ## Roadmap
@@ -264,7 +323,7 @@ lap.lap_time      # seconds
 - [x] **M3.5**: automated tests (pytest) + CI
 - [x] **M4**: second loader (F1 25 via UDP) through the same, untouched engine
 - [x] **M5**: unified app: post-session analysis + live delta while driving
-- [x] **M6**: driving-behaviour heuristics from sim channels (exploratory)
+- [x] **M6**: driving-behaviour heuristics from sim channels and derived accelerations (exploratory)
 - [x] **M7**: third loader (MoTeC CSV: Assetto Corsa and real loggers), marginal cost measured
 
 ## Honest limits
@@ -284,6 +343,12 @@ by, which is metres, so hundredths of a second.
 The behaviour metrics are measured on the distance grid, so no length
 is finer than one grid step (5 m by default). Load laps with a finer
 `step` for input analysis.
+
+The derived accelerations assume planar motion, so elevation and
+banking are ignored, and the sign of the lateral one follows the
+handedness of each source's map: compare magnitudes across sources,
+signs only within one. Their smoothing windows were chosen from the
+noise the sources have, not tuned on real laps.
 
 ## What is left before 1.0
 
@@ -305,4 +370,7 @@ tests that matter, and 1.0 is the version after they pass:
   laps whose times match the game's own;
 - a MoTeC i2 export of an Assetto Corsa outing loads with the channel
   names it actually uses (the alias table is the likeliest thing to
-  need a line added) and its lap times match i2's.
+  need a line added) and its lap times match i2's;
+- the derived accelerations of a real F1 lap land where an F1 car is
+  known to be (around 5 g under braking, 4 to 6 g in fast corners) with
+  the default windows, or the defaults move.
