@@ -20,7 +20,7 @@ from apextrace.app.analysis import (  # noqa: E402
     compare_payload,
     lap_payload,
 )
-from apextrace.app.cli import build_parser, serve  # noqa: E402
+from apextrace.app.cli import build_parser, main, serve  # noqa: E402
 from apextrace.app.hub import LiveHub  # noqa: E402
 from apextrace.app.server import LiveConfig, create_app  # noqa: E402
 from apextrace.app.store import SessionStore  # noqa: E402
@@ -214,6 +214,33 @@ def test_upload_reads_a_motec_export_and_passes_the_steering_lock(client, tmp_pa
     ids = [lap["id"] for lap in with_lock["added"]]
     compared = client.get("/api/compare", params={"a": ids[0], "b": ids[1]}).json()
     assert compared["behaviour"] is not None
+
+
+def test_laps_leave_as_a_table_and_come_back_the_same(client, capture, tmp_path):
+    """Export is the extracted-table persistence; import is one more format."""
+    added = upload(client, capture).json()["added"]
+
+    exported = client.get("/api/export")
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("text/csv")
+    assert "attachment" in exported.headers["content-disposition"]
+    table = tmp_path / "laps.csv"
+    table.write_bytes(exported.content)
+
+    back = upload(client, table, name="laps.csv").json()
+    assert back["format"] == "apex-trace lap table"
+    assert [lap["lap_time"] for lap in back["added"]] == [
+        lap["lap_time"] for lap in added
+    ]
+    assert back["added"][0]["channels"] == added[0]["channels"]
+
+    one = client.get("/api/export", params={"ids": added[1]["id"]})
+    assert one.text.count("\n") < exported.text.count("\n")
+    assert client.get("/api/export", params={"ids": "nope"}).status_code == 404
+
+
+def test_export_with_nothing_loaded_is_an_error(client):
+    assert client.get("/api/export").status_code == 400
 
 
 def test_upload_reports_skipped_laps(client, tmp_path):
@@ -649,6 +676,35 @@ def test_cli_parses_the_documented_invocations():
     args = parser.parse_args(["serve", "--no-live", "a.f1cap", "b.f1cap"])
     assert args.no_live and [p.name for p in args.files] == ["a.f1cap", "b.f1cap"]
     assert parser.parse_args(["serve"]).host == "127.0.0.1"
+
+
+def test_cli_extract_decodes_a_capture_into_a_table(capture, tmp_path, capsys):
+    from apextrace.storage import load_laps
+
+    out = tmp_path / "session.csv.gz"
+    main(["extract", str(capture), "-o", str(out)])
+    assert "wrote 3 laps" in capsys.readouterr().out
+    laps = load_laps(out)
+    assert len(laps) == 3 and laps[0].source == "f1_25"
+
+    junk = tmp_path / "junk.bin"
+    junk.write_bytes(b"junk")
+    with pytest.raises(SystemExit, match="junk.bin"):
+        main(["extract", str(junk), "-o", str(tmp_path / "x.csv")])
+
+
+def test_cli_record_reports_a_silent_port(tmp_path):
+    with pytest.raises(SystemExit, match="no packets arrived"):
+        main(
+            [
+                "record",
+                str(tmp_path / "silent.f1cap"),
+                "--udp-port",
+                "0",
+                "--timeout",
+                "0.2",
+            ]
+        )
 
 
 def test_cli_refuses_bad_arguments_before_starting_a_server(tmp_path):

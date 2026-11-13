@@ -17,6 +17,7 @@ own pages (which defeats cross-site requests).
 
 import asyncio
 import contextlib
+import io
 import ipaddress
 import socket
 import tempfile
@@ -28,7 +29,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile, WebSocket
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
@@ -37,6 +38,7 @@ from apextrace.app.analysis import NotComparable, compare_payload, lap_payload
 from apextrace.app.hub import LiveHub
 from apextrace.app.ingest import LoadOptions, UnsupportedFile, load_file
 from apextrace.app.store import SessionStore, StoredLap
+from apextrace.storage import write_laps
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -221,6 +223,29 @@ def create_app(
             )
         except NotComparable as error:
             raise HTTPException(400, str(error)) from None
+
+    @app.get("/api/export")
+    def export(ids: str | None = None) -> Response:
+        """The session's laps as one table, to keep or to hand on.
+
+        ids is a comma-separated list of lap ids; without it, every
+        lap the app holds.
+        """
+        if ids is None:
+            chosen = store.all()
+        else:
+            chosen = [_lap_or_404(lap_id) for lap_id in ids.split(",") if lap_id]
+        if not chosen:
+            raise HTTPException(400, "there are no laps to save")
+        buffer = io.StringIO()
+        write_laps([stored.lap for stored in chosen], buffer)
+        return Response(
+            buffer.getvalue(),
+            media_type="text/csv",
+            headers={
+                "content-disposition": 'attachment; filename="apex-trace-laps.csv"'
+            },
+        )
 
     # --- loading ------------------------------------------------------
 

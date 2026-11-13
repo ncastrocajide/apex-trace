@@ -15,6 +15,7 @@ from apextrace.lap import Lap
 from apextrace.loaders.f1_25 import load_f1_25_capture
 from apextrace.loaders.f1_25.capture import MAGIC as F1_25_CAPTURE_MAGIC
 from apextrace.loaders.motec_csv import is_motec_csv, load_motec_csv
+from apextrace.storage import is_lap_table, load_laps
 
 # How much of a file a sniffer gets to look at.
 _SNIFF_BYTES = 4096
@@ -48,12 +49,17 @@ def _load_motec_csv(path: Path, options: LoadOptions) -> Loaded:
     return load_motec_csv(path, steering_lock=options.steering_lock)
 
 
+def _load_lap_table(path: Path, options: LoadOptions) -> Loaded:
+    return load_laps(path), []
+
+
 Loader = Callable[[Path, LoadOptions], Loaded]
 
 # (name, does this look like one?, load it). First match wins.
 FORMATS: list[tuple[str, Callable[[bytes], bool], Loader]] = [
     ("F1 25 capture", _is_f1_25_capture, _load_f1_25_capture),
     ("MoTeC CSV export", is_motec_csv, _load_motec_csv),
+    ("apex-trace lap table", is_lap_table, _load_lap_table),
 ]
 
 

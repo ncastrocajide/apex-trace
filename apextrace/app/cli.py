@@ -1,16 +1,24 @@
-"""Command line entry point: ``apextrace serve``.
+"""Command line entry point: ``apextrace``.
 
 apextrace serve                         # analysis + live F1 25 on UDP 20777
 apextrace serve --record monza.f1cap    # same, keeping the raw stream
 apextrace serve --replay monza.f1cap    # relive a recorded session
 apextrace serve --no-live a.f1cap b.csv # analysis only, files preloaded
+apextrace record monza.f1cap            # just record the F1 25 stream
+apextrace extract monza.f1cap -o monza.csv   # decode to a table of laps
+
+Only ``serve`` needs the app's optional dependencies; recording and
+extracting run on the engine alone.
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-from apextrace.loaders.f1_25 import DEFAULT_PORT
+from apextrace.app.ingest import LoadOptions, UnsupportedFile, load_file
+from apextrace.lap import Lap
+from apextrace.loaders.f1_25 import DEFAULT_PORT, record
+from apextrace.storage import save_laps
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,14 +93,85 @@ def build_parser() -> argparse.ArgumentParser:
         help="steering wheel angle at full lock, for MoTeC exports that log "
         "steering in degrees (files given on the command line)",
     )
+
+    rec = commands.add_parser(
+        "record",
+        help="record the F1 25 UDP stream to a capture file",
+        description="Record the raw F1 25 UDP stream to a capture file. Nothing "
+        "is decoded while recording; extract or serve the file afterwards.",
+    )
+    rec.add_argument("path", type=Path, help="capture file to write")
+    rec.add_argument("--udp-port", type=int, default=DEFAULT_PORT)
+    rec.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="seconds to record; omit to run until Ctrl-C",
+    )
+    rec.add_argument(
+        "--timeout",
+        type=float,
+        default=30.0,
+        help="seconds of silence after which the recording stops",
+    )
+
+    extract = commands.add_parser(
+        "extract",
+        help="decode telemetry files into one table of canonical laps",
+        description="Decode captures and exports into a single table of "
+        "canonical laps (CSV, or .csv.gz), which reloads without decoding.",
+    )
+    extract.add_argument("files", nargs="+", type=Path, help="files to decode")
+    extract.add_argument(
+        "-o", "--output", type=Path, required=True, help="table to write"
+    )
+    extract.add_argument("--steering-lock", type=float, default=None, metavar="DEG")
     return parser
+
+
+def _load_files(paths: list[Path], steering_lock: float | None) -> list[Lap]:
+    """Load every lap of every file, saying what each one gave."""
+    laps: list[Lap] = []
+    for path in paths:
+        try:
+            kind, found, notes = load_file(
+                path, LoadOptions(steering_lock=steering_lock)
+            )
+        except (OSError, UnsupportedFile, ValueError) as error:
+            raise SystemExit(f"{path}: {error}") from None
+        print(f"{path}: {kind}, {len(found)} laps")
+        for note in notes:
+            print(f"  note: {note}")
+        laps.extend(found)
+    return laps
+
+
+def run_record(args: argparse.Namespace) -> None:
+    print(f"listening on UDP {args.udp_port}, writing {args.path} (Ctrl-C to stop)")
+    count = record(
+        args.path, port=args.udp_port, duration=args.duration, timeout=args.timeout
+    )
+    if count == 0:
+        raise SystemExit(
+            f"no packets arrived on port {args.udp_port} in {args.timeout:g} s. "
+            "Check that UDP telemetry is on in the game, that the format is "
+            "2025, and that the IP address points at this machine."
+        )
+    print(f"recorded {count} packets to {args.path}")
+
+
+def run_extract(args: argparse.Namespace) -> None:
+    laps = _load_files(args.files, args.steering_lock)
+    if not laps:
+        raise SystemExit("no complete laps found; nothing written")
+    save_laps(laps, args.output)
+    print(f"wrote {len(laps)} laps to {args.output}")
 
 
 def serve(args: argparse.Namespace) -> None:
     try:
         import uvicorn
 
-        from apextrace.app.ingest import LoadOptions, UnsupportedFile, load_file
         from apextrace.app.server import LiveConfig, create_app
         from apextrace.app.store import SessionStore
     except ImportError as error:
@@ -110,17 +189,8 @@ def serve(args: argparse.Namespace) -> None:
 
     store = SessionStore()
     for path in args.files:
-        try:
-            kind, laps, notes = load_file(
-                path, LoadOptions(steering_lock=args.steering_lock)
-            )
-        except (OSError, UnsupportedFile, ValueError) as error:
-            raise SystemExit(f"{path}: {error}") from None
-        for lap in laps:
+        for lap in _load_files([path], args.steering_lock):
             store.add(lap, origin=f"upload:{path.name}")
-        print(f"{path}: {kind}, {len(laps)} laps")
-        for note in notes:
-            print(f"  note: {note}")
 
     live = None
     if not args.no_live:
@@ -149,6 +219,10 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "serve":
         serve(args)
+    elif args.command == "record":
+        run_record(args)
+    elif args.command == "extract":
+        run_extract(args)
 
 
 if __name__ == "__main__":
