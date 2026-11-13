@@ -11,8 +11,9 @@ was not modified to accept it.
 
     from apextrace.loaders.f1_25 import record, load_f1_25_capture
 
-    record("monza.f1cap", duration=600)        # while driving
-    laps, skipped = load_f1_25_capture("monza.f1cap")   # afterwards
+    record("monza.f1cap", duration=600)                  # while driving
+    laps, skipped = load_f1_25_capture("monza.f1cap")    # afterwards
+    lap = load_f1_25_lap("monza.f1cap")                  # just the fastest
 
 Or live, one Lap at a time as the driver crosses the line:
 
@@ -34,6 +35,7 @@ from apextrace.loaders.f1_25.loader import (
     LapAssembler,
     SkippedLap,
     load_f1_25_capture,
+    load_f1_25_lap,
     load_f1_25_laps,
     stream_f1_25_laps,
 )
@@ -46,6 +48,7 @@ __all__ = [
     "SkippedLap",
     "listen",
     "load_f1_25_capture",
+    "load_f1_25_lap",
     "load_f1_25_laps",
     "record",
     "replay",

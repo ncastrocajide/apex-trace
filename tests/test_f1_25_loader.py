@@ -20,6 +20,7 @@ from apextrace.loaders.f1_25 import (
     LapAssembler,
     PacketFormatError,
     load_f1_25_capture,
+    load_f1_25_lap,
     load_f1_25_laps,
     record,
     replay,
@@ -247,6 +248,37 @@ def test_capture_round_trip(tmp_path, stream):
 
     laps, _ = load_f1_25_capture(path)
     assert len(laps) == 2
+
+
+def test_one_lap_is_picked_the_way_the_fastf1_loader_picks_it(tmp_path):
+    """Fastest by default, or by the game's own lap number."""
+    slower = list(DIPS)
+    slower[0] = (600.0, 70.0, 90.0)
+    datagrams, lap_times = synthetic_session(
+        [speed_profile(dips=tuple(slower)), speed_profile(), speed_profile()],
+        lap_length=LAP_LENGTH,
+        rate_hz=20.0,
+        invalid_laps=(3,),
+    )
+    path = tmp_path / "session.f1cap"
+    write_capture(path, datagrams)
+
+    assert load_f1_25_lap(path).lap_time == pytest.approx(lap_times[1], abs=1e-3)
+    assert load_f1_25_lap(path, lap=1).lap_time == pytest.approx(lap_times[0], abs=1e-3)
+    assert load_f1_25_lap(path, lap=2).label.endswith("lap 2")
+    with pytest.raises(ValueError, match="no lap number 9"):
+        load_f1_25_lap(path, lap=9)
+
+
+def test_asking_for_a_lap_that_was_dropped_says_why(tmp_path, stream):
+    datagrams, _ = stream(laps=3, invalid_laps=(1, 2))
+    path = tmp_path / "invalid.f1cap"
+    write_capture(path, datagrams)
+
+    with pytest.raises(ValueError, match="invalidated"):
+        load_f1_25_lap(path, lap=1)
+    with pytest.raises(ValueError, match="no valid complete lap"):
+        load_f1_25_lap(path)
 
 
 def test_a_truncated_capture_still_reads_what_it_has(tmp_path, stream):

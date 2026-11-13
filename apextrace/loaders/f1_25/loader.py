@@ -122,6 +122,8 @@ class LapAssembler:
         self.keep_pit_laps = keep_pit_laps
         self.on_sample = on_sample
         self.skipped: list[SkippedLap] = []
+        # The game's lap number of each Lap returned so far, in order.
+        self.lap_numbers: list[int] = []
 
         self._session: SessionInfo | None = None
         self._pending: dict[int, dict] = {}
@@ -286,6 +288,7 @@ class LapAssembler:
             return None
 
         track = self.track
+        self.lap_numbers.append(number)
         return Lap(
             data=resample_to_distance(raw, step=self.step),
             label=f"F1 25 {track or 'unknown track'} lap {number}",
@@ -397,6 +400,49 @@ def load_f1_25_laps(
         if lap is not None:
             laps.append(lap)
     return laps, assembler.skipped
+
+
+def load_f1_25_lap(
+    path: str | Path, lap: int | str = "fastest", step: float = 5.0
+) -> Lap:
+    """Load one lap from a capture file as a canonical Lap.
+
+    The counterpart of load_fastf1_lap: where that one names a lap by
+    season, event, session and driver, a capture is already one
+    driver's session, so the file and the lap are all there is to say.
+
+    lap:
+        "fastest" (default), the quickest lap the game counted as
+        valid, or the game's own lap number.
+    step:
+        Distance grid spacing in metres.
+    """
+    assembler = LapAssembler(step=step)
+    laps: list[Lap] = []
+    for datagram in replay(path):
+        try:
+            finished = assembler.feed(datagram)
+        except PacketFormatError:
+            continue
+        if finished is not None:
+            laps.append(finished)
+
+    if lap == "fastest":
+        if not laps:
+            reasons = "; ".join(str(skipped) for skipped in assembler.skipped)
+            raise ValueError(
+                f"{Path(path).name} has no valid complete lap"
+                + (f" ({reasons})" if reasons else "")
+            )
+        return min(laps, key=lambda candidate: candidate.lap_time)
+
+    for number, candidate in zip(assembler.lap_numbers, laps, strict=True):
+        if number == lap:
+            return candidate
+    for skipped in assembler.skipped:
+        if skipped.lap_number == lap:
+            raise ValueError(f"lap {lap} was not kept: {skipped.reason}")
+    raise ValueError(f"{Path(path).name} has no lap number {lap}")
 
 
 def load_f1_25_capture(
