@@ -142,7 +142,10 @@ def test_behaviour_table_pairs_the_two_laps_corner_by_corner(session):
     laps, _ = load_f1_25_laps(session[0])
     behaviour = compare_payload(laps[0], laps[1])["behaviour"]
 
-    assert [c["key"] for c in behaviour["columns"]][:2] == ["corner", "lap"]
+    keys = [c["key"] for c in behaviour["columns"]]
+    assert keys[:2] == ["corner", "lap"]
+    # Accelerations for any lap, input metrics because these have inputs.
+    assert {"brake_g", "lat_g", "trail_g_m", "brake_peak", "trail_brake_m"} <= set(keys)
     assert [(r["corner"], r["lap"]) for r in behaviour["rows"]] == [
         ("#1", "A"),
         ("#1", "B"),
@@ -159,7 +162,21 @@ def test_behaviour_is_withheld_from_laps_without_driver_inputs(make_lap, dipped_
     dist = np.arange(0.0, 2001.0, 5.0)
     brake = np.where((dist > 850.0) & (dist < 990.0), 100.0, 0.0)
     timing_like = make_lap(dist, dipped_speed(dist), brake=brake)
-    assert lap_payload(timing_like)["behaviour"] is None
+    payload = lap_payload(timing_like)
+    keys = [c["key"] for c in payload["behaviour"]["columns"]]
+    # What is left is what speed alone supports: no map, no lateral.
+    assert keys == ["corner", "brake_g", "accel_g"]
+    assert payload["behaviour"]["rows"][0]["brake_g"] > 1.0
+    assert list(payload["channels"]) == ["Speed", "Throttle", "Brake", "Gear", "Long g"]
+
+
+def test_derived_accelerations_ride_along_as_traces(session):
+    laps, _ = load_f1_25_laps(session[0])
+    single = lap_payload(laps[0])["channels"]
+    assert {"Long g", "Lat g"} <= set(single)
+    compared = compare_payload(laps[0], laps[1])["channels"]
+    assert set(compared["Lat g"]) == {"a", "b"}
+    assert len(compared["Long g"]["a"]) == len(compared["Speed"]["a"])
 
 
 def test_laps_of_different_circuits_are_not_comparable(make_lap):

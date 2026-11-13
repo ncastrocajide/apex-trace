@@ -15,6 +15,7 @@ import pandas as pd
 from apextrace.behaviour import behaviour_report
 from apextrace.corners import label_corners, locate_marks, paired_marks, segment_lap
 from apextrace.delta import aligned_axes, common_grid, delta_time
+from apextrace.gforce import derived_g, g_report
 from apextrace.lap import DISCRETE_CHANNELS, Lap
 from apextrace.report import corner_report, lap_metrics
 
@@ -40,6 +41,17 @@ BEHAVIOUR_COLUMNS = (
     ("throttle_hesitations", "Lifts on exit", "count", 0),
     ("steering_reversals", "Steering reversals", "count", 0),
     ("pedal_overlap_m", "Pedal overlap", "m", 0),
+)
+
+
+# The acceleration columns of the same table, in the same form.
+G_COLUMNS = (
+    ("brake_g", "Peak braking", "g", 2),
+    ("accel_g", "Peak accel", "g", 2),
+    ("lat_g", "Peak lateral", "g", 2),
+    ("combined_g", "Peak combined", "g", 2),
+    ("trail_g_m", "Slowing + turning", "m", 0),
+    ("power_g_m", "Driving + turning", "m", 0),
 )
 
 
@@ -128,28 +140,57 @@ def _has_driver_inputs(lap: Lap) -> bool:
     return float(np.mean((brake > 5.0) & (brake < 95.0))) > 0.01
 
 
+def _derived(lap: Lap) -> dict[str, np.ndarray]:
+    """Accelerations derived from speed and position, as extra traces.
+
+    Longitudinal needs only speed, so every lap has it; lateral needs
+    position and is left out for laps without a map.
+    """
+    table = derived_g(lap)
+    traces = {"Long g": table["GLong"].to_numpy()}
+    if not table["GLat"].isna().all():
+        traces["Lat g"] = table["GLat"].to_numpy()
+    return traces
+
+
 def _behaviour(laps: list[tuple[str | None, Lap]]) -> dict | None:
     """Behaviour table for one lap, or for two laps row against row.
 
-    Each lap is read on its own corners and the rows are paired in
-    order, so two laps only share a table when they segment into the
-    same number of corners, as for the corner report.
+    Two families of columns. The accelerations, derived from speed and
+    position, exist for any lap. The input metrics need pedal and
+    steering traces that carry information, so they are only shown when
+    every lap in the table has them. Each lap is read on its own
+    corners and the rows are paired in order, so two laps only share a
+    table when they segment into the same number of corners, as for
+    the corner report.
     """
-    if not all(_has_driver_inputs(lap) for _, lap in laps):
-        return None
     try:
-        reports = [behaviour_report(lap) for _, lap in laps]
+        corners = [segment_lap(lap) for _, lap in laps]
     except ValueError:
         return None  # no corners detected
-    if len({len(report) for report in reports}) != 1:
+    if len({len(found) for found in corners}) != 1:
         return None
+
+    with_inputs = all(_has_driver_inputs(lap) for _, lap in laps)
+    with_map = all(_has_position(lap) for _, lap in laps)
+    chosen = [c for c in G_COLUMNS if with_map or c[0] in ("brake_g", "accel_g")]
+    if with_inputs:
+        chosen += BEHAVIOUR_COLUMNS
+
+    reports = []
+    for (_, lap), found in zip(laps, corners, strict=True):
+        report = g_report(lap, found)
+        if with_inputs:
+            inputs = behaviour_report(lap, found).drop(columns="corner")
+            report = report.join(inputs)
+        reports.append(report)
 
     columns = [{"key": "corner", "title": "Corner"}]
     if len(laps) > 1:
         columns.append({"key": "lap", "title": "Lap"})
     columns += [
         {"key": key, "title": title, "unit": unit, "digits": digits}
-        for key, title, unit, digits in BEHAVIOUR_COLUMNS
+        for key, title, unit, digits in chosen
     ]
 
     rows = []
@@ -172,9 +213,12 @@ def lap_payload(lap: Lap, marks: pd.DataFrame | None = None) -> dict:
         "lap_time": _number(lap.lap_time),
         "distance": _values(dist, 1),
         "channels": {
-            name: _values(lap.data[name].to_numpy(dtype=float))
-            for name in OVERLAY_CHANNELS
-            if name in lap.channels
+            **{
+                name: _values(lap.data[name].to_numpy(dtype=float))
+                for name in OVERLAY_CHANNELS
+                if name in lap.channels
+            },
+            **{name: _values(trace) for name, trace in _derived(lap).items()},
         },
         "corners": _segments(lap, marks),
         "metrics": {k: _number(v) for k, v in lap_metrics(lap).items()},
@@ -233,6 +277,7 @@ def compare_payload(lap_a: Lap, lap_b: Lap, marks: pd.DataFrame | None = None) -
         for name in OVERLAY_CHANNELS
         if name in lap_a.channels and name in lap_b.channels
     ]
+    derived_a, derived_b = _derived(lap_a), _derived(lap_b)
     payload = {
         "a": {"label": lap_a.label, "lap_time": _number(lap_a.lap_time)},
         "b": {"label": lap_b.label, "lap_time": _number(lap_b.lap_time)},
@@ -241,11 +286,21 @@ def compare_payload(lap_a: Lap, lap_b: Lap, marks: pd.DataFrame | None = None) -
         "delta": _values(delta, 4),
         "final_delta": _number(delta[-1]),
         "channels": {
-            name: {
-                "a": _values(_on_grid(grid, axis_a, lap_a, name)),
-                "b": _values(_on_grid(grid, axis_b, lap_b, name)),
-            }
-            for name in shared
+            **{
+                name: {
+                    "a": _values(_on_grid(grid, axis_a, lap_a, name)),
+                    "b": _values(_on_grid(grid, axis_b, lap_b, name)),
+                }
+                for name in shared
+            },
+            **{
+                name: {
+                    "a": _values(np.interp(grid, axis_a, derived_a[name])),
+                    "b": _values(np.interp(grid, axis_b, derived_b[name])),
+                }
+                for name in derived_a
+                if name in derived_b
+            },
         },
         "segments": _segments(lap_a, marks),
         "landmarks": 0 if landmarks is None else len(landmarks[0]),
