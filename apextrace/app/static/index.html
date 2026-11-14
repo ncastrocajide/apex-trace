@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>apex-trace</title>
+  <link rel="stylesheet" href="/static/vendor/uplot/uPlot.min.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand" aria-label="apex-trace">apex<span>-trace</span></div>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button role="tab" id="tab-analysis" aria-controls="view-analysis" aria-selected="true">Analysis</button>
+      <button role="tab" id="tab-live" aria-controls="view-live" aria-selected="false">Live</button>
+    </nav>
+    <div class="stream" id="stream" title="Live telemetry stream">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="stream-text">connecting</span>
+    </div>
+  </header>
+
+  <main>
+    <!-- Analysis: pick a reference lap (A) and a lap to compare (B). -->
+    <section id="view-analysis" class="view analysis" role="tabpanel" aria-labelledby="tab-analysis">
+      <aside class="sidebar">
+        <section class="panel">
+          <div class="panel-head">
+            <h2>Laps</h2>
+            <a class="hint" id="export" href="/api/export" download hidden>save as table</a>
+          </div>
+          <p class="hint" id="laps-hint">No laps yet. Add a telemetry file, or drive one in the Live view.</p>
+          <ul class="laps" id="laps"></ul>
+        </section>
+
+        <section class="panel">
+          <h2>Add laps</h2>
+          <label class="drop" id="drop">
+            <input type="file" id="file" multiple>
+            <span class="drop-title">Choose telemetry files</span>
+            <span class="drop-sub">or drop them here: F1 25 captures, MoTeC CSV exports, saved lap tables</span>
+          </label>
+          <label class="lock">Steering lock for MoTeC exports
+            <span><input type="number" id="steering-lock" min="1" max="1080" step="1" placeholder="e.g. 240"> deg</span>
+          </label>
+          <details class="fastf1">
+            <summary>From official F1 timing</summary>
+            <form id="fastf1-form">
+              <label>Year <input name="year" type="number" min="2018" max="2100" value="2024" required></label>
+              <label>Grand Prix <input name="gp" type="text" value="Italian Grand Prix" required></label>
+              <label>Session <input name="session" type="text" value="Q" required></label>
+              <label>Driver <input name="driver" type="text" value="NOR" minlength="2" maxlength="3" required></label>
+              <button type="submit">Load fastest lap</button>
+            </form>
+          </details>
+          <p class="message" id="load-message" role="status"></p>
+        </section>
+      </aside>
+
+      <div class="content" id="analysis-content">
+        <div class="empty" id="analysis-empty">
+          <h1>Pick a lap</h1>
+          <p>Mark one lap as <b class="chip a">A</b> to look at it on its own, and a second as
+             <b class="chip b">B</b> to compare it against A. Positive delta means B is behind.</p>
+        </div>
+        <div id="analysis-result" hidden>
+          <header class="result-head" id="result-head"></header>
+          <p class="notice" id="result-notice" hidden></p>
+          <section class="panel charts">
+            <div class="panel-head">
+              <h2>Traces</h2>
+              <span class="hint">drag to zoom, double-click to reset</span>
+            </div>
+            <div id="charts"></div>
+          </section>
+          <div class="split">
+            <section class="panel">
+              <h2 id="map-title">Track map</h2>
+              <div class="map-wrap"><canvas id="map"></canvas></div>
+              <p class="hint" id="map-hint"></p>
+            </section>
+            <section class="panel">
+              <h2>Lap metrics</h2>
+              <div id="metrics"></div>
+            </section>
+          </div>
+          <section class="panel" id="corners-panel">
+            <h2>Corner by corner</h2>
+            <div class="table-wrap" id="corners"></div>
+          </section>
+          <section class="panel" id="behaviour-panel" hidden>
+            <h2>Driving behaviour</h2>
+            <p class="hint">Accelerations derived from speed and position, and, for sources that record them, heuristics read from the pedal and steering traces. Exploratory: they describe what was done, they do not judge it.</p>
+            <div class="table-wrap" id="behaviour"></div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live: the lap in progress against a reference lap. -->
+    <section id="view-live" class="view live" role="tabpanel" aria-labelledby="tab-live" hidden>
+      <div class="live-bar">
+        <div class="live-status" id="live-status">Waiting for telemetry</div>
+        <label class="reference-pick">Reference
+          <select id="reference"></select>
+        </label>
+      </div>
+
+      <div class="hero">
+        <div class="delta-block">
+          <div class="delta-label">Delta to reference</div>
+          <div class="delta-value" id="delta-value">–</div>
+          <div class="delta-trend" id="delta-trend">&nbsp;</div>
+          <div class="delta-bar" aria-hidden="true">
+            <div class="delta-bar-fill" id="delta-bar-fill"></div>
+            <div class="delta-bar-zero"></div>
+          </div>
+          <div class="delta-scale" aria-hidden="true">
+            <span id="delta-scale-min">−1.0</span><span>0</span><span id="delta-scale-max">+1.0</span>
+          </div>
+        </div>
+        <dl class="live-stats">
+          <div><dt>Predicted lap</dt><dd id="stat-predicted">–</dd></div>
+          <div><dt>This lap</dt><dd id="stat-current">–</dd></div>
+          <div><dt>Reference</dt><dd id="stat-reference">–</dd></div>
+          <div><dt>Last lap</dt><dd id="stat-last">–</dd></div>
+          <div><dt>Speed</dt><dd><span id="stat-speed">–</span> <small>km/h</small></dd></div>
+          <div><dt>Gear</dt><dd id="stat-gear">–</dd></div>
+        </dl>
+        <div class="pedals" aria-hidden="true">
+          <div class="pedal"><div class="pedal-fill throttle" id="pedal-throttle"></div><span>T</span></div>
+          <div class="pedal"><div class="pedal-fill brake" id="pedal-brake"></div><span>B</span></div>
+        </div>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Delta along the lap</h2>
+          <span class="hint" id="live-lap-label"></span>
+        </div>
+        <div id="live-chart"></div>
+      </section>
+
+      <div class="split">
+        <section class="panel">
+          <h2>Session laps</h2>
+          <div class="table-wrap" id="live-laps"></div>
+        </section>
+        <section class="panel">
+          <h2>Stream</h2>
+          <dl class="stream-stats" id="stream-stats"></dl>
+          <ul class="notes" id="live-notes"></ul>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/vendor/uplot/uPlot.iife.min.js"></script>
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
